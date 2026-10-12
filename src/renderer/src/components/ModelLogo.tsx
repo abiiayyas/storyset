@@ -8,8 +8,11 @@ import { cx } from './cx'
 const FILES = import.meta.glob(['../assets/models/*.svg', '../assets/providers/higgsfield.png'], { eager: true, import: 'default' }) as Record<string, string>
 const file = (path: string): string | undefined => FILES[`../assets/${path}`]
 
-const FAMILY_LOGO: Record<string, { src: string; bg: string; inset: number }> = {
+const FAMILY_LOGO: Record<string, { src?: string; bg: string; inset: number }> = {
   'GPT Image': { src: 'models/openai.svg', bg: '#FFFFFF', inset: 0.2 },
+  Google: { src: 'providers/gemini.svg', bg: '#FFFFFF', inset: 0.18 },
+  Flux: { bg: '#18181B', inset: 0.2 },
+  Fal: { bg: '#18181B', inset: 0.2 },
   Soul: { src: 'providers/higgsfield.png', bg: '#D1FE17', inset: 0 },
   'Cinema Studio': { src: 'providers/higgsfield.png', bg: '#D1FE17', inset: 0 },
   Grok: { src: 'models/grok.svg', bg: '#FFFFFF', inset: 0.2 },
@@ -29,7 +32,7 @@ const FAMILY_LOGO: Record<string, { src: string; bg: string; inset: number }> = 
 
 export function ModelLogo({ family, size = 30, className }: { family?: string; size?: number; className?: string }) {
   const look = family ? FAMILY_LOGO[family] : undefined
-  const src = look && file(look.src)
+  const src = look?.src ? file(look.src) : undefined
   const inner = Math.round(size * (1 - (look?.inset ?? 0) * 2))
   return (
     <span
@@ -37,7 +40,13 @@ export function ModelLogo({ family, size = 30, className }: { family?: string; s
       style={{ width: size, height: size, borderRadius: Math.round(size * 0.26), background: look?.bg ?? '#F3EFE8', fontSize: Math.round(size * 0.4) }}
       aria-hidden="true"
     >
-      {src ? <img src={src} alt="" draggable={false} style={{ width: inner, height: inner }} className="object-contain" /> : (family ?? '?').slice(0, 1)}
+      {src ? (
+        <img src={src} alt="" draggable={false} style={{ width: inner, height: inner }} className="object-contain" />
+      ) : family === 'Flux' || family === 'Fal' ? (
+        <span className="font-mono font-black text-white text-[11px]">fal</span>
+      ) : (
+        (family ?? '?').slice(0, 1)
+      )}
     </span>
   )
 }

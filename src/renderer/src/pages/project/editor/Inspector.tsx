@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { AudioLines, Check, Clapperboard, Copy, ExternalLink, Film, Layers, Mic, Move, Music, Play, Sparkles, Type, Volume2, X } from 'lucide-react'
+import { AudioLines, Check, Clapperboard, Copy, ExternalLink, Film, FolderOpen, Layers, Mic, Move, Music, Play, Sparkles, Type, Volume2, X } from 'lucide-react'
 import {
   CAPTION_FONTS,
   CAPTION_POSITIONS,
@@ -161,6 +161,13 @@ function ClipTab({ clip, index }: { clip: Clip; index: number }) {
           <div className="flex flex-wrap gap-2">
             <Button size="sm" icon={<Play className="size-4" />} disabled={!image} onClick={audition}>
               Putar pratinjau gerak
+            </Button>
+            <Button
+              size="sm"
+              icon={<FolderOpen className="size-4" />}
+              onClick={() => void run(() => window.api.clips.pickImage(clip.id))}
+            >
+              {image ? 'Ganti gambar (file)' : 'Import gambar'}
             </Button>
             <Button
               size="sm"

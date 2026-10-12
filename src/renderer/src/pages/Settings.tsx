@@ -506,10 +506,10 @@ function TtsSection({ settings, statusOf, onChanged, onSettings }: { settings: A
   )
 }
 
-function HiggsfieldSection({ status, onChanged }: { status?: KeyStatus; onChanged: () => void }) {
+function VisualSection({ statusHf, statusFal, onChanged }: { statusHf?: KeyStatus; statusFal?: KeyStatus; onChanged: () => void }) {
   return (
     <>
-      <SectionTitle icon={<ImageIcon className="size-5" />} title="Gambar dan video" sub="Higgsfield membuat gambar klip, lembar karakter, dan video AI." />
+      <SectionTitle icon={<ImageIcon className="size-5" />} title="Gambar dan video" sub="Penyedia untuk membuat gambar klip, lembar karakter, dan video AI." />
       <Card>
         <div className="flex items-center gap-3">
           <ProviderLogo id="higgsfield" />
@@ -517,12 +517,12 @@ function HiggsfieldSection({ status, onChanged }: { status?: KeyStatus; onChange
             <span className="text-base font-bold">Higgsfield</span>
             <span className="text-[13px] text-ink-2">GPT Image 2.5, Kling, Seedance, dan model lain dari akun Higgsfield kamu</span>
           </div>
-          <StatusBadge status={status} />
+          <StatusBadge status={statusHf} />
         </div>
         <KeyForm
           provider="higgsfield"
           name="Higgsfield"
-          status={status}
+          status={statusHf}
           placeholder="Tempel hasil tombol Copy API key"
           hint={
             <>
@@ -543,6 +543,33 @@ function HiggsfieldSection({ status, onChanged }: { status?: KeyStatus; onChange
             di langkah <strong className="text-ink">Ide cerita</strong>, bagian Model AI.
           </span>
         </p>
+      </Card>
+
+      <Card>
+        <div className="flex items-center gap-3">
+          <ProviderLogo id="fal" />
+          <div className="flex flex-1 flex-col">
+            <span className="text-base font-bold">Fal.ai</span>
+            <span className="text-[13px] text-ink-2">FLUX.1 [schnell] dan [dev] · Sangat cepat dan hemat biaya (~$0.003/gambar)</span>
+          </div>
+          <StatusBadge status={statusFal} />
+        </div>
+        <KeyForm
+          provider="fal"
+          name="Fal.ai"
+          status={statusFal}
+          placeholder="Tempel API key Fal.ai"
+          hint={
+            <>
+              Buat kunci di dashboard Fal.ai pada bagian <strong className="text-ink">API Keys</strong>. Formatnya biasanya{' '}
+              <code className="rounded bg-sand px-1 font-mono text-xs">fal_key_...</code> atau kombinasi id:secret.
+            </>
+          }
+          help="Kunci dicek dengan endpoint Fal.ai tanpa memotong saldo."
+          link="https://fal.ai/dashboard/keys"
+          linkLabel="Buka dashboard Fal.ai"
+          onChanged={onChanged}
+        />
       </Card>
     </>
   )
@@ -617,7 +644,7 @@ export function Settings() {
                 </div>
                 <LlmSection settings={settings} statusOf={statusOf} onChanged={reload} onSettings={setSettings} />
                 <TtsSection settings={settings} statusOf={statusOf} onChanged={reload} onSettings={setSettings} />
-                <HiggsfieldSection status={statusOf('higgsfield')} onChanged={reload} />
+                <VisualSection statusHf={statusOf('higgsfield')} statusFal={statusOf('fal')} onChanged={reload} />
                 <WhisperSection settings={settings} onSettings={setSettings} />
               </>
             )}

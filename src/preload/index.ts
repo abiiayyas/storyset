@@ -43,13 +43,15 @@ const api: StudioApi = {
   },
   clips: {
     split: call('clips:split'),
-    detachVoice: call('clips:detachVoice')
+    detachVoice: call('clips:detachVoice'),
+    pickImage: call('clips:pickImage')
   },
   assets: {
     setActive: call('assets:setActive'),
     setWords: call('assets:setWords'),
     pickMusic: call('assets:pickMusic'),
-    pickImage: call('assets:pickImage')
+    pickImage: call('assets:pickImage'),
+    pickCharacterSheet: call('assets:pickCharacterSheet')
   },
   settings: {
     get: call('settings:get'),

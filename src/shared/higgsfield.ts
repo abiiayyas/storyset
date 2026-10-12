@@ -35,11 +35,52 @@ const MODELS = (catalog as unknown as { models: HfModel[] }).models
 export const HF_IMAGE_MODELS = MODELS.filter((m) => m.kind === 'image')
 export const HF_VIDEO_MODELS = MODELS.filter((m) => m.kind === 'video')
 
+export const GEMINI_IMAGE_MODELS: HfModel[] = [
+  {
+    id: 'gemini/imagen-3.0-generate-002',
+    name: 'Google Imagen 3',
+    family: 'Google',
+    kind: 'image',
+    input: { field: null, mode: 'none', max: 0 },
+    required: ['prompt'],
+    props: { prompt: { type: 'string', maxLength: 4000 } },
+    durations: null,
+    tags: ['Google', 'Hemat / Cepat']
+  }
+]
+
+export const FAL_IMAGE_MODELS: HfModel[] = [
+  {
+    id: 'fal-ai/flux/schnell',
+    name: 'FLUX.1 [schnell] · Fal.ai',
+    family: 'Flux',
+    kind: 'image',
+    input: { field: null, mode: 'none', max: 0 },
+    required: ['prompt'],
+    props: { prompt: { type: 'string', maxLength: 4000 } },
+    durations: null,
+    tags: ['Fal.ai', 'Flux', 'Hemat / Cepat']
+  },
+  {
+    id: 'fal-ai/flux/dev',
+    name: 'FLUX.1 [dev] · Fal.ai',
+    family: 'Flux',
+    kind: 'image',
+    input: { field: null, mode: 'none', max: 0 },
+    required: ['prompt'],
+    props: { prompt: { type: 'string', maxLength: 4000 } },
+    durations: null,
+    tags: ['Fal.ai', 'Flux']
+  }
+]
+
+export const ALL_IMAGE_MODELS: HfModel[] = [...HF_IMAGE_MODELS, ...GEMINI_IMAGE_MODELS, ...FAL_IMAGE_MODELS]
+
 export const DEFAULT_IMAGE_MODEL = 'marketing-studio/image/sunburst'
 export const DEFAULT_VIDEO_MODEL = 'kling-video/v3.0/std/image-to-video'
 
 export function getImageModel(id: string | null | undefined): HfModel {
-  return HF_IMAGE_MODELS.find((m) => m.id === id) ?? HF_IMAGE_MODELS.find((m) => m.id === DEFAULT_IMAGE_MODEL)!
+  return ALL_IMAGE_MODELS.find((m) => m.id === id) ?? ALL_IMAGE_MODELS.find((m) => m.id === DEFAULT_IMAGE_MODEL)!
 }
 
 export function getVideoModel(id: string | null | undefined): HfModel {
@@ -175,6 +216,9 @@ export function videoBody(
 
 /** What the app will actually request from this model, in words. */
 export function describeModel(m: HfModel): string {
+  if (m.id.startsWith('gemini/')) return 'Google Imagen 3 via Gemini API · ~$0.03/gambar'
+  if (m.id === 'fal-ai/flux/schnell') return 'FLUX.1 Schnell via Fal.ai · sangat cepat & hemat (~$0.003/gambar)'
+  if (m.id === 'fal-ai/flux/dev') return 'FLUX.1 Dev via Fal.ai · kualitas tinggi (~$0.025/gambar)'
   const res = resolutionFor(m)?.toString().replace(/k$/, 'K')
   if (m.kind === 'image') {
     const refs = maxRefs(m)
@@ -186,13 +230,14 @@ export function describeModel(m: HfModel): string {
 
 /** Picker rows, the default first with a "Rekomendasi" tag so first-time users have a safe choice. */
 export function hfModelOptions(kind: 'image' | 'video'): ModelOption[] {
-  const list = kind === 'image' ? HF_IMAGE_MODELS : HF_VIDEO_MODELS
+  const list = kind === 'image' ? ALL_IMAGE_MODELS : HF_VIDEO_MODELS
   const recommended = kind === 'image' ? DEFAULT_IMAGE_MODEL : DEFAULT_VIDEO_MODEL
   return [...list.filter((m) => m.id === recommended), ...list.filter((m) => m.id !== recommended)].map((m) => ({
     id: m.id,
     name: m.name,
     family: m.family,
     description: describeModel(m),
+    usd: m.id.startsWith('gemini/') ? 0.03 : m.id === 'fal-ai/flux/schnell' ? 0.003 : m.id === 'fal-ai/flux/dev' ? 0.025 : null,
     tags: m.id === recommended ? ['Rekomendasi', ...m.tags] : m.tags
   }))
 }

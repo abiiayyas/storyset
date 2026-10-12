@@ -1,6 +1,6 @@
 import { GoogleGenAI } from '@google/genai'
 import { GEMINI_LIBRARY_VOICES, GEMINI_VOICES, geminiVoiceName, geminiVoiceTone } from '@shared/models'
-import type { KeyTestResult, ModelOption, VoiceOption } from '@shared/types'
+import type { AspectRatio, KeyTestResult, ModelOption, VoiceOption } from '@shared/types'
 import { getSecret, requireSecret } from '../secrets'
 import { getSettings, readCache, writeCache } from '../settings'
 import { isWav, pcmToWav } from './audio'
@@ -89,6 +89,40 @@ export async function generateJson(model: string, system: string, prompt: string
     })
     return extractJson(res.text ?? '')
   } catch (e) {
+    throw friendly(e)
+  }
+}
+
+/** Draws an image with Google Imagen 3 (e.g. imagen-3.0-generate-002). */
+export async function generateImage(
+  prompt: string,
+  aspect: AspectRatio,
+  model = 'imagen-3.0-generate-002',
+  signal?: AbortSignal
+): Promise<{ bytes: Buffer; contentType: string }> {
+  try {
+    const res = await client().models.generateImages({
+      model,
+      prompt,
+      config: {
+        numberOfImages: 1,
+        aspectRatio: aspect === '9:16' ? '9:16' : '16:9',
+        outputMimeType: 'image/jpeg',
+        abortSignal: signal
+      }
+    })
+    const img = res.generatedImages?.[0]?.image
+    if (!img?.imageBytes) {
+      const reason = res.generatedImages?.[0]?.raiFilteredReason
+      if (reason) throw new Error(`Gambar disaring oleh kebijakan AI Google: ${reason}`)
+      throw new Error('Gemini selesai tanpa menghasilkan gambar')
+    }
+    return {
+      bytes: Buffer.from(img.imageBytes, 'base64'),
+      contentType: img.mimeType || 'image/jpeg'
+    }
+  } catch (e) {
+    if (signal?.aborted) throw new Error('Dibatalkan')
     throw friendly(e)
   }
 }

@@ -39,17 +39,24 @@ import {
   duplicateProject,
   getAsset,
   getBundle,
+  getCharacter,
+  getClip,
   getProject,
   insertAsset,
   listProjects,
+  patchClip,
   removeProject,
   saveSnapshot,
+  setCharacterSheet,
+  clipsOf,
+  touchProject,
   updateAssetMeta
 } from './repo'
 import { clearSecret, keyStatuses, recordCheck, revealSecret, setSecret } from './secrets'
 import { dropCache, getSettings, setSettings } from './settings'
 import { probeDurationMs, probeSize } from './services/audio'
 import * as eleven from './services/elevenlabs'
+import * as fal from './services/fal'
 import * as gemini from './services/gemini'
 import * as hf from './services/higgsfield'
 import * as llm from './services/llm'
@@ -72,12 +79,82 @@ function handle(channel: string, fn: Handler): void {
 async function testProvider(provider: ApiProvider, key?: string): Promise<KeyTestResult> {
   if (provider === 'higgsfield') return hf.testCredentials(key)
   if (provider === 'elevenlabs') return eleven.testKey(key)
+  if (provider === 'fal') return fal.testKey(key)
   return llm.testLlm(provider, key)
 }
 
 function defaultExportFolder(): string {
   return getSettings().exportFolder ?? join(app.getPath('videos'), 'Bang Story')
 }
+async function pickClipImage(clipId: string) {
+  const win = BrowserWindow.getFocusedWindow()
+  const res = await dialog.showOpenDialog(win!, {
+    title: 'Pilih gambar klip',
+    filters: [{ name: 'Gambar', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
+    properties: ['openFile']
+  })
+  if (res.canceled || !res.filePaths[0]) return null
+  const clip = getClip(clipId)
+  const src = res.filePaths[0]
+  const rel = `images/${randomUUID()}${extname(src).toLowerCase()}`
+  const abs = assetAbsPath(clip.projectId, rel)
+  mkdirSync(dirname(abs), { recursive: true })
+  copyFileSync(src, abs)
+  const size = await probeSize(abs).catch(() => null)
+  if (!size) throw new Error('Gambar tidak bisa dibaca. Pakai file PNG, JPG, atau WebP.')
+  const asset = insertAsset({
+    projectId: clip.projectId,
+    clipId: clip.id,
+    kind: 'image',
+    provider: 'local',
+    prompt: basename(src),
+    localPath: rel,
+    width: size.width,
+    height: size.height
+  })
+  emit.asset(asset)
+  patchClip(clip.id, { imageAssetId: asset.id })
+  emit.clip({ clipId: clip.id, patch: { imageAssetId: asset.id } })
+  const project = getProject(clip.projectId)
+  const first = clipsOf(clip.projectId)[0]
+  if (!project.coverAssetId || first?.id === clip.id) touchProject(clip.projectId, { coverAssetId: asset.id })
+  touchProject(clip.projectId)
+  return asset
+}
+
+async function pickCharacterSheet(characterId: string) {
+  const win = BrowserWindow.getFocusedWindow()
+  const res = await dialog.showOpenDialog(win!, {
+    title: 'Pilih lembar karakter',
+    filters: [{ name: 'Gambar', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
+    properties: ['openFile']
+  })
+  if (res.canceled || !res.filePaths[0]) return null
+  const c = getCharacter(characterId)
+  const src = res.filePaths[0]
+  const rel = `images/${randomUUID()}${extname(src).toLowerCase()}`
+  const abs = assetAbsPath(c.projectId, rel)
+  mkdirSync(dirname(abs), { recursive: true })
+  copyFileSync(src, abs)
+  const size = await probeSize(abs).catch(() => null)
+  if (!size) throw new Error('Gambar tidak bisa dibaca. Pakai file PNG, JPG, atau WebP.')
+  const asset = insertAsset({
+    projectId: c.projectId,
+    characterId: c.id,
+    kind: 'image',
+    provider: 'local',
+    prompt: basename(src),
+    localPath: rel,
+    width: size.width,
+    height: size.height
+  })
+  emit.asset(asset)
+  setCharacterSheet(c.id, asset.id)
+  emit.character({ characterId: c.id, patch: { sheetAssetId: asset.id } })
+  touchProject(c.projectId)
+  return asset
+}
+
 
 export function registerIpc(): void {
   handle('projects:list', () => listProjects())
@@ -117,6 +194,7 @@ export function registerIpc(): void {
   handle('assets:setActive', (clipId: string, assetId: string) => setActiveAsset(clipId, assetId))
   handle('clips:split', (clipId: string, atMs: number) => splitClip(clipId, Number(atMs)))
   handle('clips:detachVoice', (clipId: string) => detachVoice(clipId))
+  handle('clips:pickImage', (clipId: string) => pickClipImage(clipId))
   // Caption text fixed by hand in the editor; the words keep their times.
   handle('assets:setWords', (assetId: string, words: WordTiming[]) => {
     const a = getAsset(assetId)
@@ -180,6 +258,7 @@ export function registerIpc(): void {
       height: size.height
     })
   })
+  handle('assets:pickCharacterSheet', (characterId: string) => pickCharacterSheet(characterId))
 
   handle('settings:get', () => getSettings())
   handle('settings:set', (patch: Partial<AppSettings>) => setSettings(patch))

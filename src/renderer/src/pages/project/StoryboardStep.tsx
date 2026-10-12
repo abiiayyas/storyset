@@ -6,6 +6,7 @@ import {
   ChevronRight,
   Clapperboard,
   Film,
+  FolderOpen,
   Image as ImageIcon,
   MoreHorizontal,
   Move,
@@ -191,9 +192,12 @@ function ClipPanel({ clip, index, total }: { clip: Clip; index: number; total: n
             <ClipVisual clip={clip} image={image} video={video} job={imageJob} large playVideo />
           )}
           {!image && !isRunning(imageJob) && (
-            <div className="absolute inset-x-0 bottom-6 flex justify-center">
+            <div className="absolute inset-x-0 bottom-6 flex items-center justify-center gap-2">
               <Button variant="accent" icon={<Sparkles className="size-4" />} onClick={() => void run(() => window.api.generate.clipImage(clip.id))}>
                 Generate gambar
+              </Button>
+              <Button variant="secondary" icon={<FolderOpen className="size-4" />} onClick={() => void run(() => window.api.clips.pickImage(clip.id))}>
+                Import gambar
               </Button>
             </div>
           )}
@@ -233,11 +237,13 @@ function ClipPanel({ clip, index, total }: { clip: Clip; index: number; total: n
               Generate ulang
             </Button>
           )}
+          <Button size="sm" icon={<FolderOpen className="size-4" />} onClick={() => void run(() => window.api.clips.pickImage(clip.id))}>
+            {image ? 'Ganti gambar (file)' : 'Import gambar'}
+          </Button>
           <Button size="sm" icon={<Pencil className="size-4" />} onClick={() => setEditPrompt(!editPrompt)}>
             {editPrompt ? 'Tutup prompt' : 'Edit prompt visual'}
           </Button>
         </div>
-
         {editPrompt && (
           <AutoTextarea
             minRows={5}
@@ -450,7 +456,6 @@ export function StoryboardStep() {
   const { toast } = useApp()
   /** A character id, "new" for an unsaved one, or null. */
   const [openChar, setOpenChar] = useState<string | null>(null)
-  const [credits, setCredits] = useState<number | null>(null)
   const [videoCredits, setVideoCredits] = useState<number | null>(null)
   const [planning, setPlanning] = useState(false)
   const lastNarration = useRef<string | null>(null)
@@ -463,11 +468,12 @@ export function StoryboardStep() {
     lastNarration.current = key
   }, [jobs])
 
+  const [imageEst, setImageEst] = useState<{ credits?: number | null; usd?: number | null } | null>(null)
   useEffect(() => {
     if (project)
       void window.api.generate
         .estimate('image', getImageModel(project.imageModel).id, project.aspectRatio)
-        .then((e) => setCredits(e?.credits ?? null))
+        .then((e) => setImageEst(e ? { credits: e.credits, usd: e.usd } : null))
   }, [project?.id, project?.imageModel, project?.aspectRatio])
 
   const stats = useMemo(() => {
@@ -618,8 +624,14 @@ export function StoryboardStep() {
           onClick={() => void bulk(() => window.api.generate.missingImages(project.id))}
         >
           Generate {stats.needImg} gambar
-          {credits != null && stats.needImg > 0 && (
-            <span className="font-normal text-ink-2">≈ {Math.round(credits * stats.needImg * 10) / 10} kr</span>
+          {stats.needImg > 0 && imageEst && (
+            <span className="font-normal text-ink-2">
+              ≈ {imageEst.credits && imageEst.credits > 0
+                ? `${Math.round(imageEst.credits * stats.needImg * 10) / 10} kr`
+                : imageEst.usd && imageEst.usd > 0
+                  ? `$${(imageEst.usd * stats.needImg).toFixed(2)}`
+                  : ''}
+            </span>
           )}
         </Button>
         {readyForVideo && (

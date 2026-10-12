@@ -27,21 +27,47 @@ function withCosts(options: ModelOption[], costs: Record<string, CreditEstimate 
 function Cost({
   value,
   hasKey,
+  provider = 'higgsfield',
+  modelId,
+  clipCount = 1,
   children
 }: {
   value: CreditEstimate | null | undefined
   hasKey: boolean | null
+  provider?: 'higgsfield' | 'gemini' | 'fal'
+  modelId?: string
+  clipCount?: number
   children: (credits: number) => ReactNode
 }) {
-  if (hasKey === false) return <span className="text-muted">Perkiraan kredit muncul setelah kunci Higgsfield diisi di Pengaturan.</span>
+  if (hasKey === false) {
+    if (provider === 'gemini') return <span className="text-muted">Kunci Google Gemini belum diisi di Pengaturan.</span>
+    if (provider === 'fal') return <span className="text-muted">Kunci Fal.ai belum diisi di Pengaturan.</span>
+    return <span className="text-muted">Perkiraan kredit muncul setelah kunci Higgsfield diisi di Pengaturan.</span>
+  }
   if (value === undefined)
     return (
       <span className="flex items-center gap-1.5 text-muted">
         <Spinner className="size-3" />
-        Menghitung kredit…
+        Menghitung biaya…
       </span>
     )
-  if (value === null) return <span className="text-muted">Perkiraan kredit belum tersedia.</span>
+  if (value === null) return <span className="text-muted">Perkiraan biaya belum tersedia.</span>
+  if (provider === 'gemini') {
+    const usdPer = value.usd ?? 0.03
+    return (
+      <span>
+        ≈ ${usdPer} per gambar · {clipCount} gambar ≈ <b className="font-semibold text-ink">${(usdPer * clipCount).toFixed(2)}</b> (Google Gemini)
+      </span>
+    )
+  }
+  if (provider === 'fal') {
+    const usdPer = value.usd ?? (modelId?.includes('schnell') ? 0.003 : 0.025)
+    return (
+      <span>
+        ≈ ${usdPer} per gambar · {clipCount} gambar ≈ <b className="font-semibold text-ink">${(usdPer * clipCount).toFixed(3)}</b> (Fal.ai)
+      </span>
+    )
+  }
   return <span>{children(value.credits)}</span>
 }
 
@@ -76,18 +102,22 @@ export function ModelSection({
   const resolutions = resolutionOptions(video)
   const resolution = effectiveResolution(video, project.videoResolution)
   const videoCost = useEstimate('video', video.id, project.aspectRatio, perClip, resolution)
-  const [hasKey, setHasKey] = useState<boolean | null>(null)
+  const [keys, setKeys] = useState<{ provider: string; configured: boolean }[]>([])
 
   useEffect(() => {
-    void window.api.settings.keys().then((keys) => setHasKey(!!keys.find((k) => k.provider === 'higgsfield')?.configured))
+    void window.api.settings.keys().then((k) => setKeys(k))
   }, [])
 
-  const imageCosts = useEstimates('image', IMAGE_IDS, project.aspectRatio, undefined, hasKey === true)
-  const videoCosts = useEstimates('video', VIDEO_IDS, project.aspectRatio, perClip, hasKey === true)
-  const imageModels = useMemo(() => withCosts(IMAGE_OPTIONS, imageCosts, () => '', hasKey === true), [imageCosts, hasKey])
+  const imageProvider = image.id.startsWith('gemini/') ? 'gemini' : image.id.startsWith('fal-ai/') ? 'fal' : 'higgsfield'
+  const hasImageKey = !!keys.find((k) => k.provider === imageProvider)?.configured
+  const hasHfKey = !!keys.find((k) => k.provider === 'higgsfield')?.configured
+
+  const imageCosts = useEstimates('image', IMAGE_IDS, project.aspectRatio, undefined, hasImageKey)
+  const videoCosts = useEstimates('video', VIDEO_IDS, project.aspectRatio, perClip, hasHfKey)
+  const imageModels = useMemo(() => withCosts(IMAGE_OPTIONS, imageCosts, () => '', hasImageKey), [imageCosts, hasImageKey])
   const videoModels = useMemo(
-    () => withCosts(VIDEO_OPTIONS, videoCosts, (id) => `${fitDuration(getVideoModel(id), perClip)} dtk`, hasKey === true),
-    [videoCosts, perClip, hasKey]
+    () => withCosts(VIDEO_OPTIONS, videoCosts, (id) => `${fitDuration(getVideoModel(id), perClip)} dtk`, hasHfKey),
+    [videoCosts, perClip, hasHfKey]
   )
 
   return (
@@ -95,7 +125,7 @@ export function ModelSection({
       <div className="flex items-baseline gap-2">
         <span className="text-sm font-semibold">Model AI</span>
         <span className="text-[13px] text-muted">
-          {IMAGE_OPTIONS.length} model gambar dan {VIDEO_OPTIONS.length} model video dari Higgsfield
+          {IMAGE_OPTIONS.length} model gambar (Higgsfield, Gemini, Fal.ai) dan {VIDEO_OPTIONS.length} model video
         </span>
       </div>
       <div className="grid grid-cols-2 gap-3">
@@ -103,15 +133,15 @@ export function ModelSection({
           <ModelPicker
             value={image.id}
             models={imageModels}
-            footerNote={hasKey ? 'kredit per gambar, perkiraan Higgsfield untuk akunmu' : undefined}
+            footerNote={hasImageKey ? (imageProvider === 'higgsfield' ? 'kredit per gambar, perkiraan Higgsfield' : 'biaya per gambar') : undefined}
             renderIcon={(m) => <ModelLogo family={m.family} />}
             detail="description"
-            tagFilters={['Rekomendasi', 'Referensi', 'GPT Image', 'Soul', 'Recraft', '4K']}
+            tagFilters={['Rekomendasi', 'Referensi', 'Hemat / Cepat', 'Google', 'Fal.ai', 'GPT Image', 'Soul', 'Recraft', '4K']}
             menuClassName="w-[430px]"
             onChange={(id) => onChange({ imageModel: id })}
           />
           <p className="text-[12.5px] leading-snug text-ink-2">
-            <Cost value={imageCost} hasKey={hasKey}>
+            <Cost value={imageCost} hasKey={hasImageKey} provider={imageProvider} modelId={image.id} clipCount={clipCount}>
               {(c) => (
                 <>
                   ≈ {creditLabel(c)} kredit per gambar · {clipCount} gambar ≈ <b className="font-semibold text-ink">{creditLabel(c * clipCount)} kredit</b>
@@ -130,7 +160,7 @@ export function ModelSection({
           <ModelPicker
             value={video.id}
             models={videoModels}
-            footerNote={hasKey ? `kredit per video untuk klip ±${perClip} detik` : undefined}
+            footerNote={hasHfKey ? `kredit per video untuk klip ±${perClip} detik` : undefined}
             renderIcon={(m) => <ModelLogo family={m.family} />}
             detail="description"
             tagFilters={['Rekomendasi', 'Kling', 'Seedance', 'Wan', 'Referensi', '4K']}
@@ -153,7 +183,7 @@ export function ModelSection({
             resolution && <p className="text-[12.5px] text-ink-2">Resolusi {resolution} (satu-satunya pilihan model ini)</p>
           )}
           <p className="text-[12.5px] leading-snug text-ink-2">
-            <Cost value={videoCost} hasKey={hasKey}>
+            <Cost value={videoCost} hasKey={hasHfKey}>
               {(c) => (
                 <>
                   ≈ {creditLabel(c)} kredit per video {seconds} detik{resolution ? `, ${resolution}` : ''}

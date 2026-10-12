@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { estimateWordTimings } from '@shared/captions'
 import { stripVoiceTags } from '@shared/speech'
-import { getImageModel, getVideoModel, imageBody, maxRefs, promptLimit, videoBody, type HfModel } from '@shared/higgsfield'
+import { DEFAULT_IMAGE_MODEL, getImageModel, getVideoModel, imageBody, maxRefs, promptLimit, videoBody, type HfModel } from '@shared/higgsfield'
 import { getStyle } from '@shared/styles'
 import type { AspectRatio, Asset, Character, Clip, CreditEstimate, Job, Project, WordTiming } from '@shared/types'
 import { getDb } from './db'
@@ -31,6 +31,7 @@ import {
 import { dropCache, getSettings, readCache, writeCache } from './settings'
 import { probeDurationMs, probeSize } from './services/audio'
 import * as eleven from './services/elevenlabs'
+import * as fal from './services/fal'
 import * as gemini from './services/gemini'
 import * as hf from './services/higgsfield'
 import { downloadTo, sleep } from './services/http'
@@ -235,16 +236,96 @@ function updateJobPayload(jobId: string, payload: HfPayload): void {
   getDb().prepare('UPDATE jobs SET payload_json = ? WHERE id = ?').run(JSON.stringify(payload), jobId)
 }
 
+export function imageProviderOf(modelId: string | null | undefined): 'gemini' | 'fal' | 'higgsfield' {
+  if (!modelId) return 'higgsfield'
+  if (modelId.startsWith('gemini/') || modelId.startsWith('google/') || modelId === 'imagen-3.0-generate-002') return 'gemini'
+  if (modelId.startsWith('fal-ai/') || modelId.startsWith('fal/')) return 'fal'
+  return 'higgsfield'
+}
+
+async function finishDirectImage(
+  job: Job,
+  target: 'clip-image' | 'sheet',
+  model: string,
+  prompt: string,
+  bytes: Buffer,
+  contentType: string
+): Promise<string> {
+  const ext = extFromType(contentType, '', '.jpg')
+  const rel = saveFile(job.projectId, 'images', ext, bytes)
+  const abs = assetAbsPath(job.projectId, rel)
+  const size = await probeSize(abs)
+  const asset = insertAsset({
+    projectId: job.projectId,
+    clipId: job.clipId,
+    characterId: job.characterId,
+    kind: 'image',
+    provider: job.provider,
+    model,
+    prompt,
+    localPath: rel,
+    width: size?.width ?? null,
+    height: size?.height ?? null
+  })
+  emit.asset(asset)
+  if (target === 'sheet' && job.characterId) {
+    setCharacterSheet(job.characterId, asset.id)
+    emit.character({ characterId: job.characterId, patch: { sheetAssetId: asset.id } })
+  } else if (target === 'clip-image' && job.clipId) {
+    patchClip(job.clipId, { imageAssetId: asset.id })
+    emit.clip({ clipId: job.clipId, patch: { imageAssetId: asset.id } })
+    const project = getProject(job.projectId)
+    const first = clipsOf(job.projectId)[0]
+    if (!project.coverAssetId || first?.id === job.clipId) touchProject(job.projectId, { coverAssetId: asset.id })
+  }
+  touchProject(job.projectId)
+  return asset.id
+}
+
 // ---------- public entry points ----------
 
 export function generateClipImage(clipId: string): Job {
   const existing = activeJobFor({ clipId }, 'image')
   if (existing) return existing
   const clip = getClip(clipId)
-  const job = insertJob({ projectId: clip.projectId, clipId, kind: 'image', provider: 'higgsfield' })
+  const project = getProject(clip.projectId)
+  const modelId = project.imageModel ?? DEFAULT_IMAGE_MODEL
+  const provider = imageProviderOf(modelId)
+
+  const job = insertJob({ projectId: clip.projectId, clipId, kind: 'image', provider })
+  emit.job(job)
+
+  if (provider === 'gemini') {
+    return runJob(job, 'gemini', async (ctx) => {
+      ctx.progress(0.1, 'Menyiapkan prompt')
+      const fresh = getClip(clipId)
+      const chars = charactersOf(project.id).filter((c) => fresh.characterIds.includes(c.id))
+      const prompt = clipPrompt(project, fresh, chars, [], 4000)
+      ctx.progress(0.3, 'Membuat gambar dengan Google Imagen 3')
+      const geminiModel = modelId.replace(/^gemini\//, '')
+      const { bytes, contentType } = await gemini.generateImage(prompt, project.aspectRatio, geminiModel, ctx.signal)
+      ctx.progress(0.9, 'Menyimpan gambar')
+      return finishDirectImage(job, 'clip-image', modelId, prompt, bytes, contentType)
+    })
+  }
+
+  if (provider === 'fal') {
+    return runJob(job, 'fal', async (ctx) => {
+      ctx.progress(0.1, 'Menyiapkan prompt')
+      const fresh = getClip(clipId)
+      const chars = charactersOf(project.id).filter((c) => fresh.characterIds.includes(c.id))
+      const prompt = clipPrompt(project, fresh, chars, [], 4000)
+      ctx.progress(0.3, 'Membuat gambar dengan Fal.ai')
+      const { bytes, contentType } = await fal.generateImage(modelId, prompt, project.aspectRatio, ctx.signal, (msg) => {
+        ctx.progress(0.5, msg)
+      })
+      ctx.progress(0.9, 'Menyimpan gambar')
+      return finishDirectImage(job, 'clip-image', modelId, prompt, bytes, contentType)
+    })
+  }
+
   return startHiggsfield(job, async (ctx) => {
     const fresh = getClip(clipId)
-    const project = getProject(fresh.projectId)
     const model = getImageModel(project.imageModel)
     const chars = charactersOf(project.id).filter((c) => fresh.characterIds.includes(c.id))
     const refs = await referenceUrls(model, chars, ctx.signal)
@@ -261,9 +342,39 @@ export function generateCharacterSheet(characterId: string): Job {
   const existing = activeJobFor({ characterId }, 'sheet')
   if (existing) return existing
   const c = getCharacter(characterId)
-  const job = insertJob({ projectId: c.projectId, characterId, kind: 'sheet', provider: 'higgsfield' })
+  const project = getProject(c.projectId)
+  const modelId = project.imageModel ?? DEFAULT_IMAGE_MODEL
+  const provider = imageProviderOf(modelId)
+
+  const job = insertJob({ projectId: c.projectId, characterId, kind: 'sheet', provider })
+  emit.job(job)
+
+  if (provider === 'gemini') {
+    return runJob(job, 'gemini', async (ctx) => {
+      ctx.progress(0.1, 'Menyiapkan prompt')
+      const prompt = sheetPrompt(project, getCharacter(characterId))
+      ctx.progress(0.3, 'Membuat lembar karakter dengan Google Imagen 3')
+      const geminiModel = modelId.replace(/^gemini\//, '')
+      const { bytes, contentType } = await gemini.generateImage(prompt, '16:9', geminiModel, ctx.signal)
+      ctx.progress(0.9, 'Menyimpan lembar karakter')
+      return finishDirectImage(job, 'sheet', modelId, prompt, bytes, contentType)
+    })
+  }
+
+  if (provider === 'fal') {
+    return runJob(job, 'fal', async (ctx) => {
+      ctx.progress(0.1, 'Menyiapkan prompt')
+      const prompt = sheetPrompt(project, getCharacter(characterId))
+      ctx.progress(0.3, 'Membuat lembar karakter dengan Fal.ai')
+      const { bytes, contentType } = await fal.generateImage(modelId, prompt, '16:9', ctx.signal, (msg) => {
+        ctx.progress(0.5, msg)
+      })
+      ctx.progress(0.9, 'Menyimpan lembar karakter')
+      return finishDirectImage(job, 'sheet', modelId, prompt, bytes, contentType)
+    })
+  }
+
   return startHiggsfield(job, async () => {
-    const project = getProject(c.projectId)
     const model = getImageModel(project.imageModel)
     const prompt = sheetPrompt(project, getCharacter(characterId))
     return {
@@ -425,6 +536,11 @@ export async function estimateCredits(
   seconds = 5,
   resolution?: string | null
 ): Promise<CreditEstimate | null> {
+  if (kind === 'image') {
+    const prov = imageProviderOf(modelId)
+    if (prov === 'gemini') return { credits: 0, usd: 0.03 }
+    if (prov === 'fal') return { credits: 0, usd: modelId.includes('schnell') ? 0.003 : 0.025 }
+  }
   const model = kind === 'image' ? getImageModel(modelId) : getVideoModel(modelId)
   const body =
     kind === 'image'

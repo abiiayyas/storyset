@@ -63,6 +63,8 @@ export interface StudioApi {
     split(clipId: string, atMs: number): Promise<ProjectBundle>
     /** Takes the voice off a clip. */
     detachVoice(clipId: string): Promise<void>
+    /** Picks a local image file from disk and assigns it to this clip. */
+    pickImage(clipId: string): Promise<Asset | null>
   }
   assets: {
     setActive(clipId: string, assetId: string): Promise<void>
@@ -71,6 +73,8 @@ export interface StudioApi {
     pickMusic(projectId: string): Promise<Asset | null>
     /** A logo or watermark image for an overlay. */
     pickImage(projectId: string): Promise<Asset | null>
+    /** Picks a local image file from disk and assigns it as the character's reference sheet. */
+    pickCharacterSheet(characterId: string): Promise<Asset | null>
   }
   settings: {
     get(): Promise<AppSettings>

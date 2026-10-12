@@ -8,6 +8,7 @@
   "license": "MIT",
   "private": true,
   "scripts": {
+    "start": "electron-vite dev",
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",

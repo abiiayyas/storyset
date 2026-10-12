@@ -19,10 +19,10 @@ Pengguna memasukkan kuncinya sendiri di **Pengaturan › Layanan AI dan kunci**.
 | Penyedia (`ApiProvider`) | Dipakai untuk |
 |---|---|
 | `higgsfield` | gambar, lembar karakter, video |
-| `gemini` | LLM (naskah/visual) dan Gemini TTS |
+| `gemini` | LLM (naskah/visual), Gemini TTS, dan Google Imagen 3 |
+| `fal` | gambar dan lembar karakter via Fal.ai (FLUX.1 Schnell & Dev) |
 | `elevenlabs` | TTS |
 | `openrouter`, `groq`, `custom` | LLM lewat API kompatibel OpenAI |
-
 ## LLM (`services/llm.ts`, `services/gemini.ts`)
 
 - `generateJson({ system, prompt, schema, name })` memanggil penyedia aktif (`settings.llmProvider` +
@@ -83,6 +83,12 @@ di API Higgsfield (hanya di aplikasi webnya). Satu entri:
   "butuh <field>" (`checkRequired`). Ikon keluarga model diatur di `components/ModelLogo.tsx`.
 - Model bawaan: `DEFAULT_IMAGE_MODEL` dan `DEFAULT_VIDEO_MODEL` di `shared/higgsfield.ts`.
 
+
+## Fal.ai dan Google Imagen 3 (`services/fal.ts`, `services/gemini.ts`)
+
+- **Google Imagen 3**: Menggunakan SDK `@google/genai` yang sama dengan LLM dan Gemini TTS. Model `gemini/imagen-3.0-generate-002` (~$0.03/gambar).
+- **Fal.ai**: Base URL `https://queue.fal.run`, header `Authorization: Key <kunci>`. Model `fal-ai/flux/schnell` (~$0.003/gambar) dan `fal-ai/flux/dev` (~$0.025/gambar).
+- **Import Gambar Lokal**: Pengguna juga bisa mengimpor gambar PNG/JPG/WebP sendiri langsung ke klip atau lembar karakter via dialog file tanpa memakai API sama sekali.
 ## Whisper lokal (`src/main/whisper.ts`)
 
 - Biner: `resources/whisper/whisper-cli.exe` + DLL (whisper.cpp, lisensi MIT). Saat ini hanya untuk Windows.

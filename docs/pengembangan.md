@@ -148,14 +148,29 @@ selama ekspor berjalan.
    berguna kalau nanti ada fitur update otomatis.
 
 Yang ikut dipaketkan (lihat `electron-builder.yml`): `out/`, FFmpeg (di luar asar), `resources/fonts` → `fonts`,
-`resources/whisper` → `whisper`, `resources/licenses` → `licenses`, dan lisensi FFmpeg →
-`licenses/FFmpeg-LICENSE.txt`. Ikon aplikasi dan installer diambil otomatis dari `build/icon.ico` (folder
-`buildResources`). Kalau logo berubah, buat ulang `icon.ico` (16–256 px) dan `icon.png` (1024 px) dari logo yang baru.
+`resources/licenses` → `licenses`, dan lisensi FFmpeg → `licenses/FFmpeg-LICENSE.txt`. Khusus Windows ditambah
+`resources/whisper` → `whisper`. Ikon aplikasi dan installer diambil otomatis dari `build/icon.ico` (Windows) dan
+`build/icon.png` (macOS, dikonversi ke `.icns`) di folder `buildResources`. Kalau logo berubah, buat ulang `icon.ico`
+(16–256 px) dan `icon.png` (1024 px) dari logo yang baru.
 
-Installer hanya untuk Windows dan belum ditandatangani (*code signing*), jadi Windows SmartScreen menampilkan
-peringatan saat pertama kali dijalankan. Installer macOS (`.dmg`) hanya bisa dibuat di Mac, dan butuh akun Apple
-Developer supaya tidak diblokir Gatekeeper. Selain itu, Whisper versi macOS juga belum ada. Lihat
-[masalah-diketahui.md](masalah-diketahui.md).
+Installer Windows belum ditandatangani (*code signing*), jadi Windows SmartScreen menampilkan peringatan saat pertama
+kali dijalankan.
+
+### Installer macOS
+
+Hanya bisa dibuat di Mac, dan arsitekturnya mengikuti binary `ffmpeg-static` yang terpasang di `node_modules`
+(sekarang x64). Bersihkan dulu, lalu build:
+
+```bash
+rm -rf out dist
+npm run build
+npx electron-builder --mac --publish never
+```
+
+Hasilnya `dist/BangStory-<versi>-mac-x64.dmg`. App belum ditandatangani/notarisasi (`mac.identity: null`), jadi
+Gatekeeper memblokir file yang diunduh sampai pengguna klik kanan → Buka, atau menjalankan
+`xattr -cr "/Applications/Bang Story.app"`. Supaya lolos tanpa itu butuh akun Apple Developer. Whisper versi macOS
+belum ada. Lihat [masalah-diketahui.md](masalah-diketahui.md).
 
 ### Screenshot README
 

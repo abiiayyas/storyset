@@ -1,3 +1,4 @@
+import type { GraphicSpec } from './graphics'
 export type ProjectStatus = 'draft' | 'script' | 'storyboard' | 'editing' | 'exported'
 export type AspectRatio = '16:9' | '9:16'
 export type TtsProvider = 'gemini' | 'elevenlabs'
@@ -158,6 +159,11 @@ export interface Clip {
   voiceInMs: number
   voiceOutMs: number | null
   voiceStartMs: number
+  /**
+   * Set for a motion scene: the template this clip is drawn from. Its render is stored as `videoAssetId`, and a clip
+   * without a render yet has no image either, so it counts as a clip that still needs making.
+   */
+  graphic: GraphicSpec | null
   imageAssetId: string | null
   videoAssetId: string | null
   audioAssetId: string | null
@@ -175,6 +181,8 @@ export interface AssetMeta {
   words?: WordTiming[]
   estimatedTimings?: boolean
   voice?: string
+  /** Motion scene renders: the `graphicKey` the file was drawn from, to tell when it is outdated. */
+  graphicKey?: string
   [key: string]: unknown
 }
 
@@ -199,7 +207,7 @@ export interface Asset {
 }
 
 /** "narration" voices several scenes in one take and cuts it per scene. */
-export type JobKind = 'story' | 'image' | 'sheet' | 'video' | 'tts' | 'narration' | 'align' | 'export'
+export type JobKind = 'story' | 'image' | 'sheet' | 'video' | 'graphic' | 'tts' | 'narration' | 'align' | 'export'
 export type JobStatus = 'queued' | 'running' | 'done' | 'failed' | 'canceled'
 
 export interface Job {

@@ -352,7 +352,10 @@ async function renderSegment(
     return out
   }
   const image = assetOf(bundle, clip.imageAssetId)
-  if (!image) throw new Error(`Klip ${String(index + 1).padStart(2, '0')} (“${clip.title}”) belum punya gambar.`)
+  if (!image) {
+    const what = clip.graphic ? 'belum dirender sebagai scene motion' : 'belum punya gambar'
+    throw new Error(`Klip ${String(index + 1).padStart(2, '0')} (“${clip.title}”) ${what}.`)
+  }
   const ownFrames = Math.max(2, Math.round(seg.own * opts.fps))
   const cam = cameraPerspective(clip.cameraPreset, clip.motionStrength, ownFrames, opts.fps)
   const vf = cameraChain(cam, cam ? workSize(image.width, image.height, size) : size, size)

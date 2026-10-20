@@ -26,6 +26,7 @@ const api: StudioApi = {
   story: {
     script: call('story:script'),
     visuals: call('story:visuals'),
+    graphics: call('story:graphics'),
     musicPrompt: call('story:musicPrompt')
   },
   generate: {
@@ -34,6 +35,8 @@ const api: StudioApi = {
     clipTts: call('generate:clipTts'),
     characterSheet: call('generate:characterSheet'),
     missingImages: call('generate:missingImages'),
+    graphic: call('generate:graphic'),
+    missingGraphics: call('generate:missingGraphics'),
     missingVideos: call('generate:missingVideos'),
     missingTts: call('generate:missingTts'),
     narration: call('generate:narration'),

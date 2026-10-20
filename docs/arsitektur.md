@@ -108,7 +108,7 @@ sebelum IPC yang membaca klip dari database (generate, split, ekspor), supaya ma
 ## Keamanan
 
 - **CSP** di `src/renderer/index.html`: skrip hanya dari aplikasi sendiri; gambar/media dari `studio:`, `blob:`,
-  `https:`; iframe hanya `https://www.youtube.com` (video tutorial di halaman About).
+  `https:` (media juga `data:`, karena Remotion Player memutar audio senyap `data:` untuk membuka izin suara); iframe hanya `https://www.youtube.com` (video tutorial di halaman About).
 - **Navigasi** jendela utama ke luar aplikasi diblok (`will-navigate`); `window.open` dibuka di browser bawaan
   hanya untuk URL https (`setWindowOpenHandler` → `shell.openExternal`).
 - **Kunci API** dienkripsi dengan Electron `safeStorage` (DPAPI di Windows, terikat akun pengguna) di tabel

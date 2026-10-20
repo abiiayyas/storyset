@@ -138,6 +138,10 @@ const MIGRATIONS: string[] = [
   `
   ALTER TABLE projects ADD COLUMN image_resolution TEXT;
   ALTER TABLE projects ADD COLUMN image_quality TEXT;
+  `,
+  // Motion scenes: the Remotion template spec (JSON) a clip is drawn from; null for image clips.
+  `
+  ALTER TABLE clips ADD COLUMN graphic_json TEXT;
   `
 ]
 

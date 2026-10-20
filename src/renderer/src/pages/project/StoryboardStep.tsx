@@ -20,6 +20,7 @@ import {
   Volume2
 } from 'lucide-react'
 import { effectiveResolution, fitDuration, getImageModel, getVideoModel } from '@shared/higgsfield'
+import { defaultGraphic } from '@shared/graphics'
 import { CAMERA_PRESETS, MOTION_STRENGTHS, cameraAt, cameraCss } from '@shared/motion'
 import { needsVisual } from '@shared/script'
 import { geminiVoiceName, geminiVoiceTone } from '@shared/models'
@@ -33,6 +34,7 @@ import { useNarration } from '../../lib/useNarration'
 import { useApp } from '../../store/app'
 import { isRunning, jobFor, useProject } from '../../store/project'
 import { CharacterModal } from './CharacterModal'
+import { MotionEditor, renderState } from './MotionEditor'
 
 function useAudio(): { play: (url: string) => void; stop: () => void; playing: string | null } {
   const ref = useRef<HTMLAudioElement | null>(null)
@@ -116,6 +118,7 @@ function ClipPanel({ clip, index, total }: { clip: Clip; index: number; total: n
   const imageJob = jobFor(jobs, 'image', { clipId: clip.id })
   const narration = useNarration()
   const videoJob = jobFor(jobs, 'video', { clipId: clip.id })
+  const graphicJob = jobFor(jobs, 'graphic', { clipId: clip.id })
   const versions = Object.values(assets)
     .filter((a) => a.clipId === clip.id && a.kind === 'image')
     .sort((a, b) => a.createdAt - b.createdAt)
@@ -132,6 +135,15 @@ function ClipPanel({ clip, index, total }: { clip: Clip; index: number; total: n
       await fn()
     } catch (e) {
       toast('error', errorText(e))
+    }
+  }
+
+  const setSource = (source: 'image' | 'motion'): void => {
+    if (source === 'motion') {
+      if (!clip.graphic) updateClip(clip.id, { graphic: defaultGraphic('title', clip.title) })
+    } else if (clip.graphic) {
+      // The motion render is the clip's video, so leaving it linked would keep showing the scene instead of the image.
+      updateClip(clip.id, video?.meta.graphicKey ? { graphic: null, videoAssetId: null, motionType: 'camera' } : { graphic: null })
     }
   }
 
@@ -184,113 +196,141 @@ function ClipPanel({ clip, index, total }: { clip: Clip; index: number; total: n
       </div>
 
       {/* The preview stays put while the settings below it scroll. */}
-      <div className="shrink-0 border-b border-line px-5 pb-3.5 pt-4">
-        <div className={cx('relative overflow-hidden rounded-xl border-[1.5px] border-ink bg-paper', aspect)}>
-          {image && !isRunning(imageJob) && clip.motionType === 'camera' ? (
-            <MotionPreview image={image} clip={clip} />
-          ) : (
-            <ClipVisual clip={clip} image={image} video={video} job={imageJob} large playVideo />
-          )}
-          {!image && !isRunning(imageJob) && (
-            <div className="absolute inset-x-0 bottom-6 flex items-center justify-center gap-2">
-              <Button variant="accent" icon={<Sparkles className="size-4" />} onClick={() => void run(() => window.api.generate.clipImage(clip.id))}>
-                Generate gambar
-              </Button>
-              <Button variant="secondary" icon={<FolderOpen className="size-4" />} onClick={() => void run(() => window.api.clips.pickImage(clip.id))}>
-                Import gambar
-              </Button>
-            </div>
-          )}
-          {versions.length > 1 && (
-            <div className="absolute bottom-2.5 left-2.5 flex items-center gap-1.5 rounded-[10px] border border-ink bg-surface/95 p-1.5">
-              {versions.slice(-5).map((v, i, arr) => (
-                <button
-                  key={v.id}
-                  type="button"
-                  aria-label={`Pakai versi ${versions.length - arr.length + i + 1}`}
-                  onClick={() => void window.api.assets.setActive(clip.id, v.id)}
-                  className={cx(
-                    'h-[26px] w-[44px] overflow-hidden rounded-[5px]',
-                    v.id === clip.imageAssetId ? 'border-2 border-accent' : 'border border-line-2 opacity-80 hover:opacity-100'
-                  )}
-                >
-                  <img src={v.url} alt="" className="size-full object-cover" />
-                </button>
-              ))}
-              <span className="px-1 text-xs font-semibold">
-                Versi {versions.findIndex((v) => v.id === clip.imageAssetId) + 1}
-              </span>
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="scroll-thin flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 py-4">
-        <div className="flex flex-wrap gap-2">
-          {image && (
-            <Button
-              size="sm"
-              icon={<RefreshCw className="size-4" />}
-              loading={isRunning(imageJob)}
-              onClick={() => void run(() => window.api.generate.clipImage(clip.id))}
-            >
-              Generate ulang
-            </Button>
-          )}
-          <Button size="sm" icon={<FolderOpen className="size-4" />} onClick={() => void run(() => window.api.clips.pickImage(clip.id))}>
-            {image ? 'Ganti gambar (file)' : 'Import gambar'}
-          </Button>
-          <Button size="sm" icon={<Pencil className="size-4" />} onClick={() => setEditPrompt(!editPrompt)}>
-            {editPrompt ? 'Tutup prompt' : 'Edit prompt visual'}
-          </Button>
-        </div>
-        {editPrompt && (
-          <AutoTextarea
-            minRows={5}
-            autoFocus
-            value={clip.visualPrompt}
-            onChange={(e) => updateClip(clip.id, { visualPrompt: e.target.value })}
-            aria-label="Prompt visual"
-            placeholder={[
-              'Setting: tempat, dunia/planet, era, detail latar',
-              'Action: siapa melakukan apa',
-              'Wardrobe: Leo - default outfit as on the reference sheet; the teenager - custom for this scene: grey tunic',
-              'Framing: medium shot, eye level',
-              'Avoid: Earth landscape, aliens'
-            ].join('\n')}
-            className={cx(inputCls, 'py-2.5 text-[13px] leading-relaxed')}
-          />
-        )}
-
-        {characters.length > 0 && (
-          <div className="flex flex-col gap-1.5">
-            <span className="text-sm font-semibold">Pemeran di klip ini</span>
-            <div className="flex flex-wrap gap-1.5">
-              {characters.map((c) => {
-                const on = clip.characterIds.includes(c.id)
-                const sheet = c.sheetAssetId ? assets[c.sheetAssetId] : null
-                return (
+      {!clip.graphic && (
+        <div className="shrink-0 border-b border-line px-5 pb-3.5 pt-4">
+          <div className={cx('relative overflow-hidden rounded-xl border-[1.5px] border-ink bg-paper', aspect)}>
+            {image && !isRunning(imageJob) && clip.motionType === 'camera' ? (
+              <MotionPreview image={image} clip={clip} />
+            ) : (
+              <ClipVisual clip={clip} image={image} video={video} job={imageJob} large playVideo />
+            )}
+            {!image && !isRunning(imageJob) && (
+              <div className="absolute inset-x-0 bottom-6 flex items-center justify-center gap-2">
+                <Button variant="accent" icon={<Sparkles className="size-4" />} onClick={() => void run(() => window.api.generate.clipImage(clip.id))}>
+                  Generate gambar
+                </Button>
+                <Button variant="secondary" icon={<FolderOpen className="size-4" />} onClick={() => void run(() => window.api.clips.pickImage(clip.id))}>
+                  Import gambar
+                </Button>
+              </div>
+            )}
+            {versions.length > 1 && (
+              <div className="absolute bottom-2.5 left-2.5 flex items-center gap-1.5 rounded-[10px] border border-ink bg-surface/95 p-1.5">
+                {versions.slice(-5).map((v, i, arr) => (
                   <button
-                    key={c.id}
+                    key={v.id}
                     type="button"
-                    aria-pressed={on}
-                    title={sheet ? undefined : 'Belum ada lembar karakter'}
-                    onClick={() =>
-                      updateClip(clip.id, {
-                        characterIds: on ? clip.characterIds.filter((x) => x !== c.id) : [...clip.characterIds, c.id]
-                      })
-                    }
+                    aria-label={`Pakai versi ${versions.length - arr.length + i + 1}`}
+                    onClick={() => void window.api.assets.setActive(clip.id, v.id)}
                     className={cx(
-                      'inline-flex h-9 items-center gap-2 whitespace-nowrap rounded-full border py-0 pl-1 pr-3 text-[13px] font-medium transition-colors',
-                      on ? 'border-ink bg-ink text-paper' : 'border-line-2 bg-surface text-ink hover:border-ink-2'
+                      'h-[26px] w-[44px] overflow-hidden rounded-[5px]',
+                      v.id === clip.imageAssetId ? 'border-2 border-accent' : 'border border-line-2 opacity-80 hover:opacity-100'
                     )}
                   >
-                    <CharacterAvatar name={c.name} sheetUrl={sheet?.url} size={28} className={on ? 'border-paper/70' : undefined} />
-                    {c.name}
+                    <img src={v.url} alt="" className="size-full object-cover" />
                   </button>
-                )
-              })}
+                ))}
+                <span className="px-1 text-xs font-semibold">
+                  Versi {versions.findIndex((v) => v.id === clip.imageAssetId) + 1}
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div className="scroll-thin flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 py-4">
+        <div className="flex items-center gap-2.5">
+          <span className="text-sm font-semibold">Visual</span>
+          <Segmented
+            size="sm"
+            value={clip.graphic ? 'motion' : 'image'}
+            onChange={setSource}
+            options={[
+              { id: 'image', label: 'Gambar', title: 'Gambar dari AI atau file kamu' },
+              { id: 'motion', label: 'Motion', title: 'Scene dari template: judul, poin, angka, atau grafik. Gratis, dirender di komputer.' }
+            ]}
+          />
+        </div>
+        {clip.graphic && (
+          <MotionEditor
+            clip={clip}
+            aspect={project.aspectRatio}
+            asset={video}
+            job={graphicJob}
+            onChange={(graphic) => updateClip(clip.id, { graphic })}
+            onRender={() => void run(() => window.api.generate.graphic(clip.id))}
+          />
+        )}
+        {!clip.graphic && (
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-wrap gap-2">
+              {image && (
+                <Button
+                  size="sm"
+                  icon={<RefreshCw className="size-4" />}
+                  loading={isRunning(imageJob)}
+                  onClick={() => void run(() => window.api.generate.clipImage(clip.id))}
+                >
+                  Generate ulang
+                </Button>
+              )}
+              <Button size="sm" icon={<FolderOpen className="size-4" />} onClick={() => void run(() => window.api.clips.pickImage(clip.id))}>
+                {image ? 'Ganti gambar (file)' : 'Import gambar'}
+              </Button>
+              <Button size="sm" icon={<Pencil className="size-4" />} onClick={() => setEditPrompt(!editPrompt)}>
+                {editPrompt ? 'Tutup prompt' : 'Edit prompt visual'}
+              </Button>
             </div>
+            {editPrompt && (
+              <AutoTextarea
+                minRows={5}
+                autoFocus
+                value={clip.visualPrompt}
+                onChange={(e) => updateClip(clip.id, { visualPrompt: e.target.value })}
+                aria-label="Prompt visual"
+                placeholder={[
+                  'Setting: tempat, dunia/planet, era, detail latar',
+                  'Action: siapa melakukan apa',
+                  'Wardrobe: Leo - default outfit as on the reference sheet; the teenager - custom for this scene: grey tunic',
+                  'Framing: medium shot, eye level',
+                  'Avoid: Earth landscape, aliens'
+                ].join('\n')}
+                className={cx(inputCls, 'py-2.5 text-[13px] leading-relaxed')}
+              />
+            )}
+
+            {characters.length > 0 && (
+              <div className="flex flex-col gap-1.5">
+                <span className="text-sm font-semibold">Pemeran di klip ini</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {characters.map((c) => {
+                    const on = clip.characterIds.includes(c.id)
+                    const sheet = c.sheetAssetId ? assets[c.sheetAssetId] : null
+                    return (
+                      <button
+                        key={c.id}
+                        type="button"
+                        aria-pressed={on}
+                        title={sheet ? undefined : 'Belum ada lembar karakter'}
+                        onClick={() =>
+                          updateClip(clip.id, {
+                            characterIds: on ? clip.characterIds.filter((x) => x !== c.id) : [...clip.characterIds, c.id]
+                          })
+                        }
+                        className={cx(
+                          'inline-flex h-9 items-center gap-2 whitespace-nowrap rounded-full border py-0 pl-1 pr-3 text-[13px] font-medium transition-colors',
+                          on ? 'border-ink bg-ink text-paper' : 'border-line-2 bg-surface text-ink hover:border-ink-2'
+                        )}
+                      >
+                        <CharacterAvatar name={c.name} sheetUrl={sheet?.url} size={28} className={on ? 'border-paper/70' : undefined} />
+                        {c.name}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -339,113 +379,115 @@ function ClipPanel({ clip, index, total }: { clip: Clip; index: number; total: n
           </div>
         </div>
 
-        <div className="flex flex-col gap-2 pb-2">
-          <span className="text-sm font-semibold">Gerak</span>
-          <div className="grid grid-cols-2 gap-2">
-            {(
-              [
-                { id: 'camera', title: 'Gerak kamera', sub: 'Gratis · dirender di komputer', icon: <Move className="size-[22px]" />, subCls: 'text-ok-ink' },
-                { id: 'video', title: 'Video AI', sub: 'Higgsfield · pakai kredit', icon: <Film className="size-[22px]" />, subCls: 'text-ink-2' }
-              ] as const
-            ).map((o) => {
-              const on = clip.motionType === o.id
-              return (
-                <button
-                  key={o.id}
-                  type="button"
-                  aria-pressed={on}
-                  onClick={() => updateClip(clip.id, { motionType: o.id })}
-                  className={cx(
-                    'flex items-center gap-2.5 rounded-xl px-3 py-2 text-left',
-                    on ? 'border-2 border-accent bg-accent-soft' : 'border border-line-2 bg-surface hover:border-ink-2'
-                  )}
-                >
-                  {o.icon}
-                  <span className="flex flex-col">
-                    <span className="text-sm font-semibold">{o.title}</span>
-                    <span className={cx('text-xs', o.subCls)}>{o.sub}</span>
-                  </span>
-                </button>
-              )
-            })}
-          </div>
-          {clip.motionType === 'camera' ? (
-            <>
-              <div className="flex flex-wrap gap-1.5">
-                {CAMERA_PRESETS.map((p) => (
-                  <Chip key={p.id} on={clip.cameraPreset === p.id} className="h-8 px-3 text-[13px]" onClick={() => updateClip(clip.id, { cameraPreset: p.id })}>
-                    {p.label}
-                  </Chip>
-                ))}
-              </div>
-              <Segmented
-                size="sm"
-                value={clip.motionStrength}
-                onChange={(v) => updateClip(clip.id, { motionStrength: v })}
-                options={MOTION_STRENGTHS.map((m) => ({ id: m.id, label: m.label }))}
-                className="self-start"
-              />
-            </>
-          ) : (
-            <div className="flex flex-col gap-2">
-              {!voice && (
-                <p className="rounded-lg bg-sun-soft px-2.5 py-1.5 text-xs text-sun-ink">
-                  Buat suara narasinya dulu. Panjang klip mengikuti suara, jadi durasi video AI ikut pas.
-                </p>
-              )}
-              {video?.durationMs != null && video.durationMs + 300 < clip.durationMs && (
-                <p className="rounded-lg bg-sun-soft px-2.5 py-1.5 text-xs text-sun-ink">
-                  Video {secLabel(video.durationMs)}, klip {secLabel(clip.durationMs)}. Sisa {secLabel(clip.durationMs - video.durationMs)} memakai frame
-                  terakhir yang diam. Buat ulang video supaya pas.
-                </p>
-              )}
-              {project && (
-                <div className="flex items-center gap-1.5 text-xs text-ink-2">
-                  <Film className="size-3.5 shrink-0" />
-                  <span className="truncate">
-                    {getVideoModel(project.videoModel).name} · video {fitDuration(getVideoModel(project.videoModel), clip.durationMs / 1000)} detik
-                    {effectiveResolution(getVideoModel(project.videoModel), project.videoResolution) &&
-                      ` · ${effectiveResolution(getVideoModel(project.videoModel), project.videoResolution)}`}
-                  </span>
+        {!clip.graphic && (
+          <div className="flex flex-col gap-2 pb-2">
+            <span className="text-sm font-semibold">Gerak</span>
+            <div className="grid grid-cols-2 gap-2">
+              {(
+                [
+                  { id: 'camera', title: 'Gerak kamera', sub: 'Gratis · dirender di komputer', icon: <Move className="size-[22px]" />, subCls: 'text-ok-ink' },
+                  { id: 'video', title: 'Video AI', sub: 'Higgsfield · pakai kredit', icon: <Film className="size-[22px]" />, subCls: 'text-ink-2' }
+                ] as const
+              ).map((o) => {
+                const on = clip.motionType === o.id
+                return (
                   <button
+                    key={o.id}
                     type="button"
-                    onClick={() => updateProject({ step: 1 })}
-                    className="shrink-0 font-semibold text-accent-dark hover:underline"
+                    aria-pressed={on}
+                    onClick={() => updateClip(clip.id, { motionType: o.id })}
+                    className={cx(
+                      'flex items-center gap-2.5 rounded-xl px-3 py-2 text-left',
+                      on ? 'border-2 border-accent bg-accent-soft' : 'border border-line-2 bg-surface hover:border-ink-2'
+                    )}
                   >
-                    Ganti model
+                    {o.icon}
+                    <span className="flex flex-col">
+                      <span className="text-sm font-semibold">{o.title}</span>
+                      <span className={cx('text-xs', o.subCls)}>{o.sub}</span>
+                    </span>
                   </button>
-                </div>
-              )}
-              <AutoTextarea
-                minRows={2}
-                value={clip.videoPrompt}
-                onChange={(e) => updateClip(clip.id, { videoPrompt: e.target.value })}
-                placeholder="Arahan gerak, misalnya: Gajah Mada mengangkat kepalan tangan, kamera mendekat pelan"
-                aria-label="Arahan gerak video"
-                className={cx(inputCls, 'py-2 text-[13px] leading-relaxed')}
-              />
-              <div className="flex items-center gap-2">
-                <Button
-                  size="sm"
-                  variant={video ? 'secondary' : 'accent'}
-                  icon={<Clapperboard className="size-4" />}
-                  loading={isRunning(videoJob)}
-                  disabled={!image}
-                  onClick={() => void run(() => window.api.generate.clipVideo(clip.id))}
-                >
-                  {video ? 'Buat ulang video' : 'Buat video'}
-                </Button>
-                {!image && <span className="text-xs text-muted">Buat gambar dulu, lalu jadikan video.</span>}
-                {isRunning(videoJob) && (
-                  <span className="text-xs text-sun-ink">
-                    {videoJob!.message ?? 'Memproses'} {Math.round(videoJob!.progress * 100)}%
-                  </span>
-                )}
-                {videoJob?.status === 'failed' && <span className="truncate text-xs text-bad-ink">{videoJob.error}</span>}
-              </div>
+                )
+              })}
             </div>
-          )}
-        </div>
+            {clip.motionType === 'camera' ? (
+              <>
+                <div className="flex flex-wrap gap-1.5">
+                  {CAMERA_PRESETS.map((p) => (
+                    <Chip key={p.id} on={clip.cameraPreset === p.id} className="h-8 px-3 text-[13px]" onClick={() => updateClip(clip.id, { cameraPreset: p.id })}>
+                      {p.label}
+                    </Chip>
+                  ))}
+                </div>
+                <Segmented
+                  size="sm"
+                  value={clip.motionStrength}
+                  onChange={(v) => updateClip(clip.id, { motionStrength: v })}
+                  options={MOTION_STRENGTHS.map((m) => ({ id: m.id, label: m.label }))}
+                  className="self-start"
+                />
+              </>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {!voice && (
+                  <p className="rounded-lg bg-sun-soft px-2.5 py-1.5 text-xs text-sun-ink">
+                    Buat suara narasinya dulu. Panjang klip mengikuti suara, jadi durasi video AI ikut pas.
+                  </p>
+                )}
+                {video?.durationMs != null && video.durationMs + 300 < clip.durationMs && (
+                  <p className="rounded-lg bg-sun-soft px-2.5 py-1.5 text-xs text-sun-ink">
+                    Video {secLabel(video.durationMs)}, klip {secLabel(clip.durationMs)}. Sisa {secLabel(clip.durationMs - video.durationMs)} memakai frame
+                    terakhir yang diam. Buat ulang video supaya pas.
+                  </p>
+                )}
+                {project && (
+                  <div className="flex items-center gap-1.5 text-xs text-ink-2">
+                    <Film className="size-3.5 shrink-0" />
+                    <span className="truncate">
+                      {getVideoModel(project.videoModel).name} · video {fitDuration(getVideoModel(project.videoModel), clip.durationMs / 1000)} detik
+                      {effectiveResolution(getVideoModel(project.videoModel), project.videoResolution) &&
+                        ` · ${effectiveResolution(getVideoModel(project.videoModel), project.videoResolution)}`}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => updateProject({ step: 1 })}
+                      className="shrink-0 font-semibold text-accent-dark hover:underline"
+                    >
+                      Ganti model
+                    </button>
+                  </div>
+                )}
+                <AutoTextarea
+                  minRows={2}
+                  value={clip.videoPrompt}
+                  onChange={(e) => updateClip(clip.id, { videoPrompt: e.target.value })}
+                  placeholder="Arahan gerak, misalnya: Gajah Mada mengangkat kepalan tangan, kamera mendekat pelan"
+                  aria-label="Arahan gerak video"
+                  className={cx(inputCls, 'py-2 text-[13px] leading-relaxed')}
+                />
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant={video ? 'secondary' : 'accent'}
+                    icon={<Clapperboard className="size-4" />}
+                    loading={isRunning(videoJob)}
+                    disabled={!image}
+                    onClick={() => void run(() => window.api.generate.clipVideo(clip.id))}
+                  >
+                    {video ? 'Buat ulang video' : 'Buat video'}
+                  </Button>
+                  {!image && <span className="text-xs text-muted">Buat gambar dulu, lalu jadikan video.</span>}
+                  {isRunning(videoJob) && (
+                    <span className="text-xs text-sun-ink">
+                      {videoJob!.message ?? 'Memproses'} {Math.round(videoJob!.progress * 100)}%
+                    </span>
+                  )}
+                  {videoJob?.status === 'failed' && <span className="truncate text-xs text-bad-ink">{videoJob.error}</span>}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </aside>
   )
@@ -458,6 +500,7 @@ export function StoryboardStep() {
   const [openChar, setOpenChar] = useState<string | null>(null)
   const [videoCredits, setVideoCredits] = useState<number | null>(null)
   const [planning, setPlanning] = useState(false)
+  const [proposing, setProposing] = useState(false)
   const lastNarration = useRef<string | null>(null)
 
   // A failed narration take is reported once, when it happens.
@@ -477,13 +520,19 @@ export function StoryboardStep() {
   }, [project?.id, project?.imageModel, project?.aspectRatio])
 
   const stats = useMemo(() => {
-    const imgs = clips.filter((c) => c.imageAssetId).length
+    const aspect = project?.aspectRatio ?? '16:9'
+    // A motion clip counts as a finished picture once it has a render that still matches its scene.
+    const motionState = (c: Clip) => renderState(c, c.videoAssetId ? assets[c.videoAssetId] : null, aspect)
+    const imgs = clips.filter((c) => (c.graphic ? motionState(c) === 'fresh' : c.imageAssetId)).length
     const voices = clips.filter((c) => c.audioAssetId).length
-    const needImg = clips.filter((c) => !c.imageAssetId && !isRunning(jobFor(jobs, 'image', { clipId: c.id }))).length
+    const needImg = clips.filter((c) => !c.graphic && !c.imageAssetId && !isRunning(jobFor(jobs, 'image', { clipId: c.id }))).length
     const videoRunning = clips.filter((c) => isRunning(jobFor(jobs, 'video', { clipId: c.id }))).length
-    const needVideo = clips.filter((c) => !c.videoAssetId && !isRunning(jobFor(jobs, 'video', { clipId: c.id })))
-    return { imgs, voices, needImg, videoRunning, needVideo, total: clips.reduce((n, c) => n + c.durationMs, 0) }
-  }, [clips, jobs])
+    const needVideo = clips.filter((c) => !c.graphic && !c.videoAssetId && !isRunning(jobFor(jobs, 'video', { clipId: c.id })))
+    const motionRunning = clips.filter((c) => c.graphic && isRunning(jobFor(jobs, 'graphic', { clipId: c.id }))).length
+    const needMotion = clips.filter((c) => c.graphic && motionState(c) !== 'fresh' && !isRunning(jobFor(jobs, 'graphic', { clipId: c.id }))).length
+    const canPropose = clips.some((c) => !c.graphic && !c.imageAssetId)
+    return { imgs, voices, needImg, videoRunning, needVideo, motionRunning, needMotion, canPropose, total: clips.reduce((n, c) => n + c.durationMs, 0) }
+  }, [clips, jobs, assets, project?.aspectRatio])
 
   // Video length follows each clip's voice, so the cost is estimated per video length and summed.
   const videoLengths = useMemo(() => {
@@ -525,7 +574,7 @@ export function StoryboardStep() {
   // Videos are made last: every clip has its picture, and the voice is final so each video matches its clip length.
   const readyForVideo =
     clips.length > 0 &&
-    clips.every((c) => c.imageAssetId) &&
+    clips.every((c) => c.graphic || c.imageAssetId) &&
     narration.voiced > 0 &&
     narration.stale === 0 &&
     !narration.running
@@ -536,7 +585,7 @@ export function StoryboardStep() {
       body:
         `Setiap gambar klip dianimasikan dengan ${getVideoModel(project!.videoModel).name}, panjangnya mengikuti suara narasi klip itu.` +
         (videoCredits != null ? ` Perkiraan biaya ${Math.round(videoCredits * 10) / 10} kredit Higgsfield.` : '') +
-        ' Klip yang sudah punya video tidak dibuat ulang.',
+        ' Klip yang sudah punya video tidak dibuat ulang. Klip motion tidak ikut, karena sudah punya render sendiri.',
       confirm: `Buat ${n} video`
     })
     if (ok) await bulk(() => window.api.generate.missingVideos(project!.id))
@@ -554,6 +603,25 @@ export function StoryboardStep() {
       toast('error', errorText(e))
     } finally {
       setPlanning(false)
+    }
+  }
+
+  const proposeMotion = async (): Promise<void> => {
+    setProposing(true)
+    try {
+      await flush()
+      const before = clips.filter((c) => c.graphic).length
+      const bundle = await window.api.story.graphics(project.id)
+      load(bundle)
+      const added = bundle.clips.filter((c) => c.graphic).length - before
+      toast(
+        added > 0 ? 'success' : 'info',
+        added > 0 ? `${added} adegan dijadikan scene motion. Cek dulu, lalu render.` : 'Belum ada adegan yang cocok dijadikan scene motion.'
+      )
+    } catch (e) {
+      toast('error', errorText(e))
+    } finally {
+      setProposing(false)
     }
   }
 
@@ -657,12 +725,33 @@ export function StoryboardStep() {
 
       <div className="grid min-h-0 grid-cols-[minmax(0,1fr)_540px]">
         <section className="scroll-thin flex min-h-0 flex-col gap-3.5 overflow-y-auto px-6 pb-6 pt-[18px]">
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <h1 className="font-display text-2xl font-bold">Storyboard</h1>
             <span className="text-sm text-muted">
               {clips.length} klip · {mmss(stats.total)}
             </span>
             <div className="flex-1" />
+            <Button
+              size="sm"
+              icon={<Sparkles className="size-4" />}
+              loading={proposing}
+              disabled={!stats.canPropose}
+              title="AI memilih adegan tanpa gambar yang cocok dijadikan judul, poin, angka, atau grafik."
+              onClick={() => void proposeMotion()}
+            >
+              Usulkan scene motion
+            </Button>
+            {(stats.needMotion > 0 || stats.motionRunning > 0) && (
+              <Button
+                size="sm"
+                variant="primary"
+                icon={<Clapperboard className="size-4" />}
+                loading={stats.motionRunning > 0}
+                onClick={() => void bulk(() => window.api.generate.missingGraphics(project.id))}
+              >
+                {stats.motionRunning > 0 ? `Merender ${stats.motionRunning} motion` : `Render semua motion (${stats.needMotion})`}
+              </Button>
+            )}
             <Button variant="ghost" icon={<Plus className="size-[17px]" />} onClick={() => addClip(sel?.id ?? null)}>
               Tambah klip
             </Button>
@@ -683,7 +772,25 @@ export function StoryboardStep() {
               const on = c.id === sel?.id
               const imageJob = jobFor(jobs, 'image', { clipId: c.id })
               const ttsRunning = isRunning(jobFor(jobs, 'tts', { clipId: c.id }))
-              const status = c.imageAssetId ? { label: 'Siap', tone: 'ok' as const } : isRunning(imageJob) ? { label: 'Proses', tone: 'warn' as const } : imageJob?.status === 'failed' ? { label: 'Gagal', tone: 'bad' as const } : { label: 'Draf', tone: 'draft' as const }
+              const graphicJob = jobFor(jobs, 'graphic', { clipId: c.id })
+              const motionState = c.graphic ? renderState(c, c.videoAssetId ? assets[c.videoAssetId] : null, project.aspectRatio) : null
+              const status = c.graphic
+                ? isRunning(graphicJob)
+                  ? { label: 'Proses', tone: 'warn' as const }
+                  : motionState === 'fresh'
+                    ? { label: 'Siap', tone: 'ok' as const }
+                    : graphicJob?.status === 'failed'
+                      ? { label: 'Gagal', tone: 'bad' as const }
+                      : motionState === 'outdated'
+                        ? { label: 'Render ulang', tone: 'warn' as const }
+                        : { label: 'Draf', tone: 'draft' as const }
+                : c.imageAssetId
+                  ? { label: 'Siap', tone: 'ok' as const }
+                  : isRunning(imageJob)
+                    ? { label: 'Proses', tone: 'warn' as const }
+                    : imageJob?.status === 'failed'
+                      ? { label: 'Gagal', tone: 'bad' as const }
+                      : { label: 'Draf', tone: 'draft' as const }
               return (
                 <button
                   key={c.id}
@@ -700,13 +807,17 @@ export function StoryboardStep() {
                       clip={c}
                       image={c.imageAssetId ? assets[c.imageAssetId] : null}
                       video={c.videoAssetId ? assets[c.videoAssetId] : null}
-                      job={imageJob}
+                      job={c.graphic ? graphicJob : imageJob}
                     />
                     <span className="absolute left-2 top-2 rounded-md bg-ink px-[7px] py-0.5 font-mono text-xs text-paper">{clipNumber(i)}</span>
-                    {c.motionType === 'video' && (
-                      <span className="absolute right-2 top-2 flex size-6 items-center justify-center rounded-md bg-ink text-paper" title="Video AI">
-                        <Film className="size-3.5" />
-                      </span>
+                    {c.graphic ? (
+                      <span className="absolute right-2 top-2 rounded-md bg-sun px-[7px] py-0.5 text-xs font-semibold text-ink">Motion</span>
+                    ) : (
+                      c.motionType === 'video' && (
+                        <span className="absolute right-2 top-2 flex size-6 items-center justify-center rounded-md bg-ink text-paper" title="Video AI">
+                          <Film className="size-3.5" />
+                        </span>
+                      )
                     )}
                     <span className="absolute bottom-2 right-2 rounded-md border border-ink bg-surface px-[7px] py-px font-mono text-xs">
                       {mmss(c.durationMs)}

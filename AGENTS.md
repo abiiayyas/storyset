@@ -30,6 +30,7 @@ src/
     db/index.ts    skema + migrasi (PRAGMA user_version)
     story.ts       naskah, rencana visual, prompt musik (LLM)
     generation.ts  gambar/video Higgsfield, lembar karakter, TTS per klip, estimasi kredit
+    motion.ts      scene motion: render Remotion ke MP4 (bundle + Chrome Headless Shell), job `graphic`
     narration.ts   narasi satu rekaman utuh lalu dipotong per adegan; sinkron caption
     whisper.ts     whisper.cpp lokal (unduh model, kenali kata)
     align.ts, cuts.ts  cocokkan kata naskah ke hasil Whisper; pilih titik potong antar-adegan
@@ -45,6 +46,8 @@ src/
   renderer/src/    tampilan React + Tailwind v4 + Zustand
     pages/project/  langkah Ide, Naskah, Storyboard, Editor
     pages/project/editor/  pratinjau (Player), Timeline, Inspector (panel kanan), engine pemutaran
+  remotion/        scene Remotion (komponen React): dipakai pratinjau (@remotion/player) DAN render di main
+scripts/           prepare-remotion.mjs: bundle Remotion + Chrome Headless Shell (dijalankan `npm run dist`)
 resources/         font caption, whisper-cli.exe + DLL, file lisensi
 build/             ikon aplikasi untuk installer (icon.ico, icon.png), dibuat dari logo di components/Logo.tsx
 docs/              dokumentasi pengembang
@@ -55,7 +58,8 @@ docs/              dokumentasi pengembang
 1. **Pratinjau dan ekspor harus sama.** Semua aturan yang memengaruhi gambar atau suara final ditulis sekali di
    `src/shared/` lalu dipakai pratinjau (renderer) dan ekspor (main):
    `motion.ts` (gerak kamera, transisi), `captions.ts` (gaya, font, pemenggalan baris caption),
-   `timeline.ts` (potongan suara/musik, kata caption per klip), `overlays.ts`, `higgsfield.ts`.
+   `timeline.ts` (potongan suara/musik, kata caption per klip), `overlays.ts`, `higgsfield.ts`, `graphics.ts` (scene
+   motion; komponennya di `src/remotion/` dipakai pratinjau dan render).
    Jangan menghitung ulang aturan itu di satu sisi saja.
 2. **Kunci API milik pengguna (BYOK).** Kunci hanya disimpan terenkripsi lewat `secrets.ts`, hanya dikirim ke
    layanannya masing-masing, dan tidak pernah dicetak ke log, error, atau file.
@@ -63,7 +67,7 @@ docs/              dokumentasi pengembang
    migrasi lama; `PRAGMA user_version` menghitung berapa yang sudah dijalankan.
 4. **Kolom klip baru** harus ditambahkan di semua tempat: tipe `Clip` (`shared/types.ts`), migrasi, `toClip`,
    upsert di `saveSnapshot`, `duplicateProject`, `insertClipAfter`, `CLIP_COLS` (kalau di-patch dari main), dan
-   nilai bawaan `addClip` di `renderer/src/store/project.ts`. Detail: [docs/data-model.md](docs/data-model.md).
+   nilai bawaan `addClip` di `renderer/src/store/project.ts` (juga `StoryClip` kalau kolomnya tidak dibuat saat naskah). Detail: [docs/data-model.md](docs/data-model.md).
 5. **IPC baru** butuh tiga tempat: `handle(...)` di `main/ipc.ts`, tipe di `shared/api.ts`, dan `call(...)` di
    `preload/index.ts`.
 6. **Teks antarmuka berbahasa Indonesia** (santai, pakai "kamu"); **komentar dan nama di kode berbahasa Inggris**.

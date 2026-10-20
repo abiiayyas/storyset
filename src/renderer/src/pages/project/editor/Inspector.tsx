@@ -87,27 +87,32 @@ function ClipTab({ clip, index }: { clip: Clip; index: number }) {
     <>
       <ClipHeader clip={clip} index={index} />
       {clip.motionType === 'video' ? (
-        <Section title="Video AI">
-          {video ? (
+        <Section title={clip.graphic ? 'Scene motion' : 'Video AI'}>
+          {clip.graphic ? (
+            <p className="text-[13px] text-ink-2">Klip ini scene motion. Ubah isinya atau render ulang di langkah Storyboard.</p>
+          ) : video ? (
             <p className="text-[13px] text-ink-2">Klip ini memakai video dari Higgsfield.</p>
           ) : (
             <p className="text-[13px] text-ink-2">Video belum dibuat. Sampai video siap, pratinjau memakai gambar diam.</p>
           )}
-          <div className="flex flex-wrap gap-2">
-            <Button
-              size="sm"
-              variant={video ? 'secondary' : 'accent'}
-              icon={<Clapperboard className="size-4" />}
-              loading={isRunning(videoJob)}
-              disabled={!image}
-              onClick={() => void run(() => window.api.generate.clipVideo(clip.id))}
-            >
-              {video ? 'Buat ulang video' : 'Buat video'}
-            </Button>
-            <Button size="sm" icon={<Move className="size-4" />} onClick={() => updateClip(clip.id, { motionType: 'camera' })}>
-              Kembali ke gerak kamera
-            </Button>
-          </div>
+          {/* A motion scene has no picture to fall back on and nothing for the video model to animate. */}
+          {!clip.graphic && (
+            <div className="flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                variant={video ? 'secondary' : 'accent'}
+                icon={<Clapperboard className="size-4" />}
+                loading={isRunning(videoJob)}
+                disabled={!image}
+                onClick={() => void run(() => window.api.generate.clipVideo(clip.id))}
+              >
+                {video ? 'Buat ulang video' : 'Buat video'}
+              </Button>
+              <Button size="sm" icon={<Move className="size-4" />} onClick={() => updateClip(clip.id, { motionType: 'camera' })}>
+                Kembali ke gerak kamera
+              </Button>
+            </div>
+          )}
           {isRunning(videoJob) && (
             <span className="text-xs text-sun-ink">
               {videoJob!.message ?? 'Memproses'} {Math.round(videoJob!.progress * 100)}%

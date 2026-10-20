@@ -34,6 +34,7 @@ dalam transaksi, lalu `user_version` dinaikkan.
 | 6 | `clips.video_camera`, `video_strength`, `transition_ms`, `voice_gain_db` |
 | 7 | `clips.media_in_ms`, `voice_in_ms`, `voice_out_ms`, `voice_start_ms` |
 | 8 | `projects.image_resolution`, `projects.image_quality` |
+| 9 | `clips.graphic_json` (spesifikasi scene motion) |
 
 **Aturan:** tambahkan migrasi baru di akhir. Jangan mengubah migrasi yang sudah ada, karena pengguna lama sudah
 menjalankannya.
@@ -72,6 +73,7 @@ Satu klip = satu adegan: gambar atau video, suara narasinya, dan geraknya.
 | `voiceGainDb` | volume suara klip ini (dB) |
 | `mediaInMs` | titik mulai video di dalam filenya (tepi kiri klip video yang ditarik) |
 | `voiceInMs`, `voiceOutMs`, `voiceStartMs` | potongan suara: bagian file yang dipakai (`out` null = sampai akhir) dan posisinya dari awal klip |
+| `graphic` | scene motion: `GraphicSpec` (`shared/graphics.ts`, kolom `graphic_json`) atau null untuk klip gambar. Hasil render Remotion disimpan sebagai `videoAssetId`; `meta.graphicKey` pada aset menandai render itu dibuat dari spesifikasi apa |
 | `imageAssetId`, `videoAssetId`, `audioAssetId` | aset aktif (dimiliki proses utama, tidak ikut snapshot) |
 
 Aturan potongan suara ada di `voiceSpan()` (`src/shared/timeline.ts`): suara yang melewati akhir klip dipotong.

@@ -85,3 +85,20 @@ startup (`warmUpEncryption`) mencegah kunci API tidak terbaca setelah aplikasi d
 ### YouTube embed diberi Referer berisi ID aplikasi
 Halaman dari `file://` tidak mengirim Referer, dan YouTube menolak embed tanpa identitas (Error 153). Header
 ditambahkan hanya untuk `https://www.youtube.com/embed/*`.
+
+### Scene motion: Remotion dirender ke MP4 biasa
+Klip bertemplat (judul, poin, angka, grafik) digambar oleh komponen React di `src/remotion/`. Pratinjau di editor
+memakai `@remotion/player` dan ekspor memakai `@remotion/renderer` dengan komponen yang sama, jadi hasilnya identik.
+Hasil render disimpan sebagai aset video klip (`videoAssetId`, `motionType: 'video'`), jadi timeline, trim, transisi,
+caption, dan ekspor FFmpeg tidak tahu bedanya dengan video AI. Spesifikasi scene (`Clip.graphic`) tetap disimpan,
+sehingga scene bisa diedit lalu dirender ulang. Render dianggap usang kalau `graphicKey` (spesifikasi, jumlah frame,
+rasio) berbeda dengan yang tercatat di `meta` aset; naikkan `GRAPHIC_VERSION` kalau tampilan scene berubah.
+- **LLM hanya menulis JSON**, bukan kode. `sanitizeGraphic` memotong dan memvalidasi semuanya. Kode buatan LLM tidak
+  pernah dijalankan.
+- **Chrome Headless Shell ikut dipaketkan** (±217 MB terurai). Biner Electron tidak bisa dipakai sebagai
+  `browserExecutable` Remotion (koneksi habis waktu setelah 25 detik), jadi browser terpisah memang diperlukan.
+- **Bundle dibuat saat build**, bukan saat jalan: webpack tidak bisa jalan di dalam asar. Saat pengembangan, main
+  membuatnya sendiri lewat `scripts/prepare-remotion.mjs --bundle` kalau `src/remotion` lebih baru.
+- **Lisensi:** Remotion gratis untuk individu dan tim sampai 3 orang (termasuk komersial). Membagikan aplikasi ini
+  ke perusahaan 4 orang ke atas bisa memerlukan lisensi perusahaan; syaratnya belum jelas untuk aplikasi desktop,
+  tanyakan ke hi@remotion.dev sebelum distribusi luas.

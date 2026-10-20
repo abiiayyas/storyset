@@ -13,8 +13,14 @@ extraResources:
     to: fonts
   - from: resources/licenses
     to: licenses
+  # Motion scenes: the prebuilt Remotion bundle and the Chrome it renders with (scripts/prepare-remotion.mjs).
+  - from: resources-gen/remotion-bundle
+    to: remotion/bundle
+  - from: node_modules/.remotion/chrome-headless-shell
+    to: remotion/chrome
 asarUnpack:
   - node_modules/ffmpeg-static/**
+  - node_modules/@remotion/compositor-*/**
   - '**/*.node'
 win:
   target:

@@ -3,7 +3,7 @@ import type { Asset, Clip, Job } from '@shared/types'
 import { isRunning } from '../store/project'
 import { Progress, cx } from './ui'
 
-/** A clip's picture: its video (if chosen), image, or a placeholder, with the state of any running job on top. */
+/** A clip's picture: its video (if chosen), image, or a placeholder, with the state of any running job on top. A motion scene shows its render. */
 export function ClipVisual({
   clip,
   image,
@@ -20,11 +20,25 @@ export function ClipVisual({
   playVideo?: boolean
 }) {
   const running = isRunning(job)
-  const failed = job?.status === 'failed' && !image
-  const showVideo = clip.motionType === 'video' && video && playVideo
+  // A motion clip has no image; its rendered MP4 is the picture.
+  const motion = !!clip.graphic
+  const showMotion = motion && !!video
+  const failed = job?.status === 'failed' && !image && !showMotion
+  const showVideo = !motion && clip.motionType === 'video' && video && playVideo
   return (
     <div className="absolute inset-0">
-      {showVideo ? (
+      {showMotion ? (
+        // Without playVideo only a still frame is wanted; the first frames of a scene are mostly empty, so seek a bit in.
+        <video
+          src={playVideo ? video.url : `${video.url}#t=1.5`}
+          preload="metadata"
+          className="size-full object-cover"
+          autoPlay={playVideo}
+          loop
+          muted
+          playsInline
+        />
+      ) : showVideo ? (
         <video src={video.url} poster={image?.url} className="size-full object-cover" autoPlay loop muted playsInline />
       ) : image ? (
         <img src={image.url} alt="" className="size-full object-cover" draggable={false} />
@@ -36,7 +50,7 @@ export function ClipVisual({
           )}
         >
           {failed ? <AlertCircle className={large ? 'size-7' : 'size-5'} /> : <ImageIcon className={large ? 'size-7' : 'size-5'} strokeWidth={1.6} />}
-          <span className={large ? 'text-sm' : 'text-[13px]'}>{failed ? 'Gagal dibuat' : 'Belum ada gambar'}</span>
+          <span className={large ? 'text-sm' : 'text-[13px]'}>{failed ? 'Gagal dibuat' : motion ? 'Belum dirender' : 'Belum ada gambar'}</span>
         </div>
       )}
       {running && (
@@ -44,7 +58,7 @@ export function ClipVisual({
         <div
           className={cx(
             'absolute inset-0 flex flex-col items-center justify-center gap-2',
-            image || showVideo ? 'bg-paper/80 backdrop-blur-[3px]' : 'bg-paper'
+            image || showMotion || showVideo ? 'bg-paper/80 backdrop-blur-[3px]' : 'bg-paper'
           )}
         >
           <span className={cx('font-semibold text-sun-ink', large ? 'text-[15px]' : 'text-[13px]')}>

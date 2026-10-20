@@ -60,7 +60,8 @@ import * as fal from './services/fal'
 import * as gemini from './services/gemini'
 import * as hf from './services/higgsfield'
 import * as llm from './services/llm'
-import { generateScript, generateVisuals, generateMusicPrompt } from './story'
+import { generateGraphics, generateScript, generateVisuals, generateMusicPrompt } from './story'
+import { generateClipGraphic, generateMissingGraphics } from './motion'
 
 
 type Handler = (...args: any[]) => unknown
@@ -168,11 +169,14 @@ export function registerIpc(): void {
   handle('story:musicPrompt', (projectId: string) => generateMusicPrompt(projectId))
   handle('story:visuals', (projectId: string, mode: 'missing' | 'all') => generateVisuals(projectId, mode === 'all' ? 'all' : 'missing'))
 
+  handle('story:graphics', (projectId: string) => generateGraphics(projectId))
   handle('generate:clipImage', (clipId: string) => generateClipImage(clipId))
   handle('generate:clipVideo', (clipId: string) => generateClipVideo(clipId))
   handle('generate:clipTts', (clipId: string) => generateClipTts(clipId))
   handle('generate:characterSheet', (characterId: string) => generateCharacterSheet(characterId))
   handle('generate:missingImages', (projectId: string) => generateMissingImages(projectId))
+  handle('generate:graphic', (clipId: string) => generateClipGraphic(clipId))
+  handle('generate:missingGraphics', (projectId: string) => generateMissingGraphics(projectId))
   handle('generate:missingVideos', (projectId: string) => generateMissingVideos(projectId))
   handle('generate:missingTts', (projectId: string) => generateMissingTts(projectId))
   handle('generate:narration', (projectId: string, mode: 'missing' | 'all') => generateNarration(projectId, mode === 'all' ? 'all' : 'missing'))

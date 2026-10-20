@@ -38,6 +38,8 @@ export interface StudioApi {
     script(projectId: string): Promise<ProjectBundle>
     /** Script → one image plan per scene; "missing" skips scenes whose plan still matches their story. */
     visuals(projectId: string, mode: 'missing' | 'all'): Promise<ProjectBundle>
+    /** Lets the AI turn scenes that suit it (a list, a figure, a comparison) into motion scenes. */
+    graphics(projectId: string): Promise<ProjectBundle>
     /** A background-music prompt that fits the finished script, for use in Suno or another music AI. */
     musicPrompt(projectId: string): Promise<MusicPrompt>
   }
@@ -48,6 +50,10 @@ export interface StudioApi {
     characterSheet(characterId: string): Promise<Job>
     missingImages(projectId: string): Promise<Job[]>
     /** An AI video for every clip that has an image but no video yet. */
+    /** Renders a motion scene (Remotion) and stores the result as the clip's video. */
+    graphic(clipId: string): Promise<Job>
+    /** Renders every motion scene that has no render yet or whose render is outdated. */
+    missingGraphics(projectId: string): Promise<Job[]>
     missingVideos(projectId: string): Promise<Job[]>
     missingTts(projectId: string): Promise<Job[]>
     /** Voices scenes in one continuous take and cuts it per scene: those without a voice, or all of them. */

@@ -28,9 +28,12 @@ Electron 44 mengunduh programnya saat pertama dipakai. Kalau `node_modules/elect
 | `npm run typecheck` | TypeScript untuk main+preload+shared (`tsconfig.node.json`) dan renderer+shared (`tsconfig.web.json`) |
 | `npm run build` | build produksi ke `out/` |
 | `npm run preview` | jalankan hasil build |
-| `npm run dist` | build + installer Windows NSIS ke `dist/BangStory-Setup-<versi>.exe` |
+| `npm run prepare:remotion` | membuat bundle Remotion (`resources-gen/`) dan mengunduh Chrome Headless Shell untuk scene motion |
+| `npm run dist` | `prepare:remotion` + build + installer Windows NSIS ke `dist/BangStory-Setup-<versi>.exe` |
+| `npm run dist:mac` | `prepare:remotion` + build + `.dmg` macOS ke `dist/` (hanya di Mac) |
 
-Alias impor: `@shared/*` → `src/shared/*` (semua proses), `@renderer/*` → `src/renderer/src/*`.
+Alias impor: `@shared/*` → `src/shared/*` (semua proses), `@renderer/*` → `src/renderer/src/*`, `@motion/*` →
+`src/remotion/*` (scene Remotion, dipakai pratinjau di renderer).
 
 ## Folder data saat mengembangkan
 
@@ -143,13 +146,15 @@ selama ekspor berjalan.
 2. Catat perubahan di `CHANGELOG.md`.
 3. `npm run typecheck` dan `npm run build`.
 4. `npm run dist` → `dist/BangStory-Setup-<versi>.exe`. Build pertama mengunduh alat NSIS dan winCodeSign ke
-   cache electron-builder.
+   cache electron-builder, dan Chrome Headless Shell (±104 MB) untuk scene motion ke `node_modules/.remotion`.
 5. Buat release di GitHub dengan tag `v<versi>`. Upload hanya file `.exe`. File `.blockmap` dan `latest.yml` baru
    berguna kalau nanti ada fitur update otomatis.
 
 Yang ikut dipaketkan (lihat `electron-builder.yml`): `out/`, FFmpeg (di luar asar), `resources/fonts` → `fonts`,
 `resources/licenses` → `licenses`, dan lisensi FFmpeg → `licenses/FFmpeg-LICENSE.txt`. Khusus Windows ditambah
-`resources/whisper` → `whisper`. Ikon aplikasi dan installer diambil otomatis dari `build/icon.ico` (Windows) dan
+`resources/whisper` → `whisper`. Untuk scene motion ikut: bundle Remotion (`resources-gen/remotion-bundle` →
+`remotion/bundle`) dan Chrome Headless Shell (`node_modules/.remotion/chrome-headless-shell` → `remotion/chrome`), keduanya
+dibuat `npm run prepare:remotion`; compositor Remotion dikeluarkan dari asar lewat `asarUnpack`. Ikon aplikasi dan installer diambil otomatis dari `build/icon.ico` (Windows) dan
 `build/icon.png` (macOS, dikonversi ke `.icns`) di folder `buildResources`. Kalau logo berubah, buat ulang `icon.ico`
 (16–256 px) dan `icon.png` (1024 px) dari logo yang baru.
 
@@ -163,14 +168,16 @@ Hanya bisa dibuat di Mac, dan arsitekturnya mengikuti binary `ffmpeg-static` yan
 
 ```bash
 rm -rf out dist
-npm run build
-npx electron-builder --mac --publish never
+npm run dist:mac
 ```
 
 Hasilnya `dist/BangStory-<versi>-mac-x64.dmg`. App belum ditandatangani/notarisasi (`mac.identity: null`), jadi
 Gatekeeper memblokir file yang diunduh sampai pengguna klik kanan → Buka, atau menjalankan
 `xattr -cr "/Applications/Bang Story.app"`. Supaya lolos tanpa itu butuh akun Apple Developer. Whisper versi macOS
 belum ada. Lihat [masalah-diketahui.md](masalah-diketahui.md).
+
+Chrome Headless Shell yang ikut terpasang mengikuti OS tempat `prepare:remotion` dijalankan, jadi build Windows harus
+dibuat di Windows dan build Mac di Mac.
 
 ### Screenshot README
 

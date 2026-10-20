@@ -470,21 +470,23 @@ export function generateMissingImages(projectId: string): Job[] {
   const jobs: Job[] = []
   const project = getProject(projectId)
   const model = getImageModel(project.imageModel)
+  // Motion scenes are drawn from a template, so they need neither a picture nor its character sheets.
+  const drawn = clipsOf(projectId).filter((c) => !c.graphic)
   if (maxRefs(model) > 0) {
-    const needed = new Set(clipsOf(projectId).flatMap((c) => c.characterIds))
+    const needed = new Set(drawn.flatMap((c) => c.characterIds))
     for (const c of charactersOf(projectId)) {
       if (needed.has(c.id) && !c.sheetAssetId) jobs.push(generateCharacterSheet(c.id))
     }
   }
-  for (const clip of clipsOf(projectId)) {
+  for (const clip of drawn) {
     if (!clip.imageAssetId) jobs.push(generateClipImage(clip.id))
   }
   return jobs
 }
 
-/** Turns every clip that has an image but no AI video yet into a video. */
+/** Turns every clip that has an image but no AI video yet into a video. Motion scenes are already video. */
 export function generateMissingVideos(projectId: string): Job[] {
-  const clips = clipsOf(projectId)
+  const clips = clipsOf(projectId).filter((c) => !c.graphic)
   if (clips.some((c) => !c.imageAssetId)) throw new Error('Buat gambar semua klip dulu sebelum menjadikannya video.')
   return clips.filter((c) => !c.videoAssetId).map((c) => generateClipVideo(c.id))
 }

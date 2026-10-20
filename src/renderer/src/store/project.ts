@@ -138,6 +138,7 @@ export const useProject = create<ProjectState>((set, get) => {
         voiceInMs: 0,
         voiceOutMs: null,
         voiceStartMs: 0,
+        graphic: null,
         imageAssetId: null,
         videoAssetId: null,
         audioAssetId: null

@@ -17,6 +17,7 @@ import type {
   ProjectSnapshot,
   ProjectSummary
 } from '@shared/types'
+import { sanitizeGraphic } from '@shared/graphics'
 import { visualSourceOf } from '@shared/script'
 import { getDb } from './db'
 import { assetUrl, projectDir, projectsRoot } from './paths'
@@ -66,6 +67,16 @@ const toCharacter = (r: Row): Character => ({
   sort: r.sort
 })
 
+/** A stored spec that no longer validates (hand-edited database, older template) simply makes the clip an image clip. */
+function parseGraphic(json: string | null | undefined): Clip['graphic'] {
+  if (!json) return null
+  try {
+    return sanitizeGraphic(JSON.parse(json))
+  } catch {
+    return null
+  }
+}
+
 const toClip = (r: Row): Clip => ({
   id: r.id,
   projectId: r.project_id,
@@ -90,6 +101,7 @@ const toClip = (r: Row): Clip => ({
   voiceInMs: r.voice_in_ms ?? 0,
   voiceOutMs: r.voice_out_ms ?? null,
   voiceStartMs: r.voice_start_ms ?? 0,
+  graphic: parseGraphic(r.graphic_json),
   imageAssetId: r.image_asset_id,
   videoAssetId: r.video_asset_id,
   audioAssetId: r.audio_asset_id
@@ -251,17 +263,17 @@ export function saveSnapshot(snap: ProjectSnapshot): number {
     const upClip = db.prepare(
       `INSERT INTO clips (id, project_id, sort, title, story, visual_prompt, narration, duration_ms, character_ids, motion_type,
          camera_preset, motion_strength, video_prompt, transition, video_camera, video_strength, transition_ms, voice_gain_db,
-         media_in_ms, voice_in_ms, voice_out_ms, voice_start_ms)
+         media_in_ms, voice_in_ms, voice_out_ms, voice_start_ms, graphic_json)
        VALUES (@id, @projectId, @sort, @title, @story, @visualPrompt, @narration, @durationMs, @characterIds, @motionType,
          @cameraPreset, @motionStrength, @videoPrompt, @transition, @videoCamera, @videoStrength, @transitionMs, @voiceGainDb,
-         @mediaInMs, @voiceInMs, @voiceOutMs, @voiceStartMs)
+         @mediaInMs, @voiceInMs, @voiceOutMs, @voiceStartMs, @graphicJson)
        ON CONFLICT(id) DO UPDATE SET sort = excluded.sort, title = excluded.title, story = excluded.story, visual_prompt = excluded.visual_prompt,
          narration = excluded.narration, duration_ms = excluded.duration_ms, character_ids = excluded.character_ids,
          motion_type = excluded.motion_type, camera_preset = excluded.camera_preset, motion_strength = excluded.motion_strength,
          video_prompt = excluded.video_prompt, transition = excluded.transition, video_camera = excluded.video_camera,
          video_strength = excluded.video_strength, transition_ms = excluded.transition_ms, voice_gain_db = excluded.voice_gain_db,
          media_in_ms = excluded.media_in_ms, voice_in_ms = excluded.voice_in_ms, voice_out_ms = excluded.voice_out_ms,
-         voice_start_ms = excluded.voice_start_ms`
+         voice_start_ms = excluded.voice_start_ms, graphic_json = excluded.graphic_json`
     )
     for (const c of snap.clips)
       upClip.run({
@@ -275,7 +287,8 @@ export function saveSnapshot(snap: ProjectSnapshot): number {
         mediaInMs: Math.round(c.mediaInMs ?? 0),
         voiceInMs: Math.round(c.voiceInMs ?? 0),
         voiceOutMs: c.voiceOutMs == null ? null : Math.round(c.voiceOutMs),
-        voiceStartMs: Math.round(c.voiceStartMs ?? 0)
+        voiceStartMs: Math.round(c.voiceStartMs ?? 0),
+        graphicJson: c.graphic ? JSON.stringify(c.graphic) : null
       })
   })()
   return now
@@ -344,8 +357,8 @@ export function duplicateProject(id: string): ProjectSummary {
       db.prepare(
         `INSERT INTO clips (id, project_id, sort, title, story, visual_prompt, visual_source, narration, duration_ms, character_ids,
            motion_type, camera_preset, motion_strength, video_prompt, transition, image_asset_id, video_asset_id, audio_asset_id,
-           video_camera, video_strength, transition_ms, voice_gain_db, media_in_ms, voice_in_ms, voice_out_ms, voice_start_ms)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+           video_camera, video_strength, transition_ms, voice_gain_db, media_in_ms, voice_in_ms, voice_out_ms, voice_start_ms, graphic_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).run(
         mapId(c.id),
         newId,
@@ -372,7 +385,8 @@ export function duplicateProject(id: string): ProjectSummary {
         c.mediaInMs,
         c.voiceInMs,
         c.voiceOutMs,
-        c.voiceStartMs
+        c.voiceStartMs,
+        c.graphic ? JSON.stringify(c.graphic) : null
       )
     }
   })()
@@ -388,6 +402,7 @@ export type StoryClip = Omit<
   | 'id'
   | 'projectId'
   | 'sort'
+  | 'graphic'
   | 'imageAssetId'
   | 'videoAssetId'
   | 'audioAssetId'
@@ -587,11 +602,17 @@ export function insertClipAfter(afterId: string, c: Clip): void {
     db.prepare(
       `INSERT INTO clips (id, project_id, sort, title, story, visual_prompt, visual_source, narration, duration_ms, character_ids,
          motion_type, camera_preset, motion_strength, video_prompt, transition, image_asset_id, video_asset_id, audio_asset_id,
-         video_camera, video_strength, transition_ms, voice_gain_db, media_in_ms, voice_in_ms, voice_out_ms, voice_start_ms)
+         video_camera, video_strength, transition_ms, voice_gain_db, media_in_ms, voice_in_ms, voice_out_ms, voice_start_ms, graphic_json)
        VALUES (@id, @projectId, @sort, @title, @story, @visualPrompt, @visualSource, @narration, @durationMs, @characterIds,
          @motionType, @cameraPreset, @motionStrength, @videoPrompt, @transition, @imageAssetId, @videoAssetId, @audioAssetId,
-         @videoCamera, @videoStrength, @transitionMs, @voiceGainDb, @mediaInMs, @voiceInMs, @voiceOutMs, @voiceStartMs)`
-    ).run({ ...c, projectId: after.projectId, sort: after.sort + 1, characterIds: JSON.stringify(c.characterIds) })
+         @videoCamera, @videoStrength, @transitionMs, @voiceGainDb, @mediaInMs, @voiceInMs, @voiceOutMs, @voiceStartMs, @graphicJson)`
+    ).run({
+      ...c,
+      projectId: after.projectId,
+      sort: after.sort + 1,
+      characterIds: JSON.stringify(c.characterIds),
+      graphicJson: c.graphic ? JSON.stringify(c.graphic) : null
+    })
   })()
 }
 
@@ -603,6 +624,15 @@ export function patchClipText(id: string, patch: Partial<Pick<Clip, 'title' | 's
   getDb()
     .prepare(`UPDATE clips SET ${entries.map(([k]) => `${cols[k]} = ?`).join(', ')} WHERE id = ?`)
     .run(...entries.map(([, v]) => v), id)
+}
+
+/** Turns scenes into motion scenes (or back into image scenes with null). */
+export function setClipGraphics(updates: { clipId: string; graphic: Clip['graphic'] }[]): void {
+  const db = getDb()
+  const stmt = db.prepare('UPDATE clips SET graphic_json = ? WHERE id = ?')
+  db.transaction(() => {
+    for (const u of updates) stmt.run(u.graphic ? JSON.stringify(u.graphic) : null, u.clipId)
+  })()
 }
 
 export function setCharacterSheet(id: string, assetId: string): void {

@@ -74,6 +74,13 @@ menyusun ulang semuanya. Pemeran lama tidak ditimpa; pemeran baru ditambahkan be
   panjang klip (`fitDuration`), resolusi dari `project.videoResolution`.
 - Hasil diunduh ke folder proyek, dicatat di `assets`, lalu klip diperbarui lewat `patchClip` + `emit.clip`.
 
+- **Scene motion** (`src/main/motion.ts`, `src/remotion/`): klip yang diubah di Storyboard dari "Gambar" ke "Motion"
+  tidak memakai gambar atau Higgsfield sama sekali. Templatnya: judul, poin, angka (berhitung), grafik batang.
+  `story.graphics` meminta LLM memilih adegan yang cocok (tanpa gambar, bukan motion) dan mengisi isi kartunya sebagai
+  JSON; yang tidak cocok dibiarkan. `generateClipGraphic` merender lewat Remotion (antrean `motion`, satu per satu) ke
+  MP4 sepanjang klip lalu menyimpannya sebagai video klip. `generateMissingGraphics` merender yang belum ada atau
+  usang (spesifikasi, panjang narasi, atau rasio berubah). Biayanya nol kredit.
+
 Detail API dan katalog model: [layanan-ai.md](layanan-ai.md).
 
 ## 4. Narasi (`src/main/narration.ts`)

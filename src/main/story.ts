@@ -1,9 +1,10 @@
+import { GRAPHIC_TEMPLATES, GRAPHIC_THEMES, MAX_BARS, MAX_BULLETS, sanitizeGraphic } from '@shared/graphics'
 import { CAMERA_PRESETS, MOTION_STRENGTHS, TRANSITIONS } from '@shared/motion'
 import { LANGUAGES, clipCountFor } from '@shared/models'
 import { estimateNarrationMs, needsVisual } from '@shared/script'
 import { getStyle } from '@shared/styles'
 import type { CameraPresetId, Clip, MotionStrength, MusicPrompt, ProjectBundle, TransitionId } from '@shared/types'
-import { applyVisuals, charactersOf, clipsOf, getBundle, getProject, replaceScript, type SceneVisual } from './repo'
+import { applyVisuals, charactersOf, clipsOf, getBundle, getProject, replaceScript, setClipGraphics, type SceneVisual } from './repo'
 import { generateJson } from './services/llm'
 
 const CAMERA_IDS = CAMERA_PRESETS.map((c) => c.id)
@@ -320,6 +321,92 @@ function toSceneVisual(clip: Clip, a: NonNullable<VisualPlan['scenes']>[number])
     videoPrompt: str(a.motion),
     transition: TRANSITION_IDS.includes(transition) ? transition : clip.transition
   }
+}
+
+// ---------- motion scenes ----------
+
+const GRAPHIC_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    scenes: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          scene: { type: 'integer', description: 'The scene number from the script.' },
+          use: {
+            type: 'boolean',
+            description: 'true only when this scene is better shown as an animated text/number/chart card than as a picture. When false, leave every other field empty.'
+          },
+          template: { type: 'string', enum: GRAPHIC_TEMPLATES.map((t) => t.id), description: 'title: a chapter or topic card. bullets: a list of points. stat: ONE big number. bars: comparing several numbers.' },
+          theme: { type: 'string', enum: GRAPHIC_THEMES.map((t) => t.id) },
+          title: { type: 'string', description: 'title/bullets/bars: the heading, at most 60 characters. Empty for stat.' },
+          subtitle: { type: 'string', description: 'title only: one short line under the title, otherwise empty.' },
+          items: { type: 'array', items: { type: 'string' }, description: `bullets only: 2 to ${MAX_BULLETS} short points of at most 60 characters each, otherwise empty.` },
+          value: { type: 'number', description: 'stat only: the number, otherwise 0.' },
+          prefix: { type: 'string', description: 'stat only: before the number, like "Rp" or "$", otherwise empty.' },
+          suffix: { type: 'string', description: 'stat only: after the number, like "%", "km" or " juta", otherwise empty.' },
+          label: { type: 'string', description: 'stat only: what the number measures, at most 60 characters, otherwise empty.' },
+          caption: { type: 'string', description: 'stat only: optional small note such as the year or source, otherwise empty.' },
+          unit: { type: 'string', description: 'bars only: the unit shown after each value, otherwise empty.' },
+          bars: {
+            type: 'array',
+            description: `bars only: 2 to ${MAX_BARS} bars, otherwise empty.`,
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              properties: { label: { type: 'string', description: 'At most 16 characters.' }, value: { type: 'number' } },
+              required: ['label', 'value']
+            }
+          }
+        },
+        required: ['scene', 'use', 'template', 'theme', 'title', 'subtitle', 'items', 'value', 'prefix', 'suffix', 'label', 'caption', 'unit', 'bars']
+      }
+    }
+  },
+  required: ['scenes']
+}
+
+/**
+ * Picks the scenes that read better as an animated card (a list, a figure, a comparison, a chapter title) than as a
+ * picture, and fills in their card. Scenes that already have a picture or are already motion scenes are left alone.
+ */
+export async function generateGraphics(projectId: string): Promise<ProjectBundle> {
+  const project = getProject(projectId)
+  const clips = clipsOf(projectId)
+  if (!clips.length) throw new Error('Naskah masih kosong. Tambahkan adegan dulu.')
+  const targets = clips.map((c, i) => ({ clip: c, n: i + 1 })).filter((t) => !t.clip.imageAssetId && !t.clip.graphic)
+  if (!targets.length) throw new Error('Semua adegan sudah punya gambar atau sudah jadi scene motion.')
+
+  const language = languageOf(project.language)
+  const system = [
+    'You are the motion designer for a faceless YouTube video. The script is final; you decide which scenes become an animated text card instead of a picture.',
+    'A scene suits a card only when its narration is mainly: a topic or chapter introduction (title), an enumeration of points (bullets), one striking number or statistic (stat), or a comparison between several numbers (bars).',
+    'Most scenes are better as pictures, so choose few: usually at most one scene in three, and often none. Never choose a scene just to fill the quota.',
+    'Use only facts and numbers that the narration itself states. Never invent figures. If a number is not in the narration, do not use stat or bars for that scene.',
+    `Write all card text in ${language}. Keep it short: a card is read in two seconds while the narrator speaks.`
+  ].join('\n')
+  const script = clips
+    .map((c, i) => `Scene ${i + 1}: ${c.title}\nNarration: ${c.narration || c.story || '(none)'}`)
+    .join('\n\n')
+  const prompt = [
+    `Idea of the video: ${project.synopsis}`,
+    `Full script:\n${script}`,
+    `Decide for these scenes only: ${targets.map((t) => t.n).join(', ')}. Answer once for each of them.`
+  ].join('\n\n')
+
+  const plan = await generateJson<{ scenes?: Record<string, unknown>[] }>({ system, prompt, schema: GRAPHIC_SCHEMA, name: 'graphics' })
+  const updates: { clipId: string; graphic: NonNullable<Clip['graphic']> }[] = []
+  for (const s of plan.scenes ?? []) {
+    const target = targets.find((t) => t.n === Number(s.scene))
+    const graphic = s.use === true ? sanitizeGraphic(s) : null
+    if (target && graphic) updates.push({ clipId: target.clip.id, graphic })
+  }
+  if (!updates.length) throw new Error('Tidak ada adegan yang cocok dijadikan scene motion. Semuanya lebih pas sebagai gambar.')
+  setClipGraphics(updates)
+  return getBundle(projectId)
 }
 
 // ---------- background music ----------

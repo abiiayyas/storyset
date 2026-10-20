@@ -9,6 +9,10 @@ Cara menaikkan versi ada di [docs/pengembangan.md](docs/pengembangan.md#versi-da
 ## [Belum dirilis]
 
 ### Ditambahkan
+- **Scene motion (Remotion):** klip bisa berupa kartu animasi (judul, poin, angka berhitung, grafik batang) tanpa gambar
+  AI dan tanpa kredit. Pilih "Motion" di Storyboard, edit dengan pratinjau langsung, atau minta AI memilih adegan yang
+  cocok. Hasil dirender jadi video klip biasa. Installer ikut membawa Chrome Headless Shell (+±100 MB). Migrasi 9:
+  `clips.graphic_json`. Perintah baru: `npm run prepare:remotion`, `npm run dist:mac`.
 - Ukuran (1K/2K/4K) dan kualitas (rendah/sedang/tinggi) gambar klip bisa dipilih per proyek, dengan perkiraan
   kredit yang ikut berubah. Bawaannya sekarang 1K dan sedang (sebelumnya selalu 2K dan tinggi), jauh lebih murah
   untuk model yang ditagih per ukuran dan kualitas seperti GPT Image. Lembar karakter tetap 2K dan tinggi.

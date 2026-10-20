@@ -65,7 +65,9 @@ menyusun ulang semuanya. Pemeran lama tidak ditimpa; pemeran baru ditambahkan be
   Dibuat lebih dulu kalau model gambar menerima referensi (`maxRefs(model) > 0`).
 - **Gambar klip** (`clipPrompt`): adegan dulu, lalu pemeran (tubuh dari lembar karakter, baju mengikuti baris
   `Wardrobe`), lalu gaya visual, lalu baris `Avoid` sebagai "Must not appear", lalu format frame. Lembar karakter
-  dikirim sebagai gambar referensi.
+  dikirim sebagai gambar referensi. Ukuran dan kualitas dari `project.imageResolution`/`imageQuality`; kalau kosong
+  atau tidak didukung modelnya, dipakai bawaan hemat (1K, sedang). Lembar karakter selalu 2K/tinggi karena jadi
+  acuan semua klip.
 - **Video AI** (`generateClipVideo`): gambar klip + `videoPrompt` (atau prompt cadangan). Setiap prompt video
   diakhiri `NO_MUSIC` ("Silent clip: no background music...") dan audio dimatikan lewat parameter kalau
   modelnya punya (`sound: off`, `generate_audio: false`). Durasi video = durasi terpendek model yang menutup

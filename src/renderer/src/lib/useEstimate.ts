@@ -7,20 +7,21 @@ export function useEstimate(
   modelId: string,
   aspect: AspectRatio,
   seconds?: number,
-  resolution?: string | null
+  resolution?: string | null,
+  quality?: string | null
 ): CreditEstimate | null | undefined {
   const [value, setValue] = useState<CreditEstimate | null | undefined>(undefined)
   useEffect(() => {
     let alive = true
     setValue(undefined)
     window.api.generate
-      .estimate(kind, modelId, aspect, seconds, resolution)
+      .estimate(kind, modelId, aspect, seconds, resolution, quality)
       .then((v) => alive && setValue(v))
       .catch(() => alive && setValue(null))
     return () => {
       alive = false
     }
-  }, [kind, modelId, aspect, seconds, resolution])
+  }, [kind, modelId, aspect, seconds, resolution, quality])
   return value
 }
 
@@ -33,9 +34,11 @@ export function useEstimates(
   ids: string[],
   aspect: AspectRatio,
   seconds: number | undefined,
-  enabled: boolean
+  enabled: boolean,
+  resolution?: string | null,
+  quality?: string | null
 ): Record<string, CreditEstimate | null> {
-  const context = `${kind}|${aspect}|${seconds ?? ''}|${ids.join(',')}`
+  const context = `${kind}|${aspect}|${seconds ?? ''}|${resolution ?? ''}|${quality ?? ''}|${ids.join(',')}`
   const [state, setState] = useState<{ context: string; map: Record<string, CreditEstimate | null> }>({ context, map: {} })
 
   useEffect(() => {
@@ -45,7 +48,7 @@ export function useEstimates(
     const worker = async (): Promise<void> => {
       while (alive && queue.length) {
         const id = queue.shift()!
-        const value = await window.api.generate.estimate(kind, id, aspect, seconds).catch(() => null)
+        const value = await window.api.generate.estimate(kind, id, aspect, seconds, resolution, quality).catch(() => null)
         if (!alive) return
         setState((s) => ({ context, map: { ...(s.context === context ? s.map : {}), [id]: value } }))
       }

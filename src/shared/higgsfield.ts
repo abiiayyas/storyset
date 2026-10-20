@@ -152,8 +152,65 @@ export function effectiveResolution(m: HfModel, want?: string | null): string | 
   return r === undefined ? null : String(r)
 }
 
+/**
+ * Clip stills are only a base for camera moves, so they start on the cheap end. Models that bill by size and
+ * quality (GPT Image charges per token) cost several times more at 2K/high.
+ */
+export const DEFAULT_IMAGE_RESOLUTION = '1k'
+export const DEFAULT_IMAGE_QUALITY = 'medium'
+
+export interface ImageSettings {
+  resolution?: string | null
+  quality?: string | null
+}
+
+/** Qualities worth offering for stills; the top tiers (xhigh, max) cost far more than a clip image needs. */
+const IMAGE_QUALITIES = ['low', 'medium', 'high']
+
+/** Qualities a model offers, lowest first, or none when it has no quality switch. */
+export function qualityOptions(m: HfModel): string[] {
+  return (m.props.quality?.enum ?? []).map(String).filter((q) => IMAGE_QUALITIES.includes(q))
+}
+
+function qualityFor(m: HfModel, want?: string | null): string | undefined {
+  const values = m.props.quality?.enum
+  if (!values?.length) return undefined
+  if (want && values.includes(want)) return want
+  return String(values.includes('high') ? 'high' : values[values.length - 1])
+}
+
+/**
+ * A project's stored choice can name something the current model lacks (picked for another model), so anything
+ * unsupported falls back to the economical default instead of the model's own, often priciest, preference.
+ */
+function stillQuality(m: HfModel, want?: string | null): string | undefined {
+  const offered = (v?: string | null): v is string => !!v && !!m.props.quality?.enum?.includes(v)
+  return offered(want) ? want : offered(DEFAULT_IMAGE_QUALITY) ? DEFAULT_IMAGE_QUALITY : undefined
+}
+
+function stillResolution(m: HfModel, want?: string | null): string | undefined {
+  const offered = (v?: string | null): v is string => !!v && !!m.props.resolution?.enum?.some((o) => String(o) === v)
+  return offered(want) ? want : offered(DEFAULT_IMAGE_RESOLUTION) ? DEFAULT_IMAGE_RESOLUTION : undefined
+}
+
+/** The quality a still will actually be requested at, or null when the model has no quality switch. */
+export function effectiveQuality(m: HfModel, want?: string | null): string | null {
+  return qualityFor(m, stillQuality(m, want)) ?? null
+}
+
+/** The size a still will actually be requested at. */
+export function effectiveImageResolution(m: HfModel, want?: string | null): string | null {
+  return effectiveResolution(m, stillResolution(m, want))
+}
+
 /** Fields every model shares: prompt, frame, quality, and switching off extras we never use. */
-function common(m: HfModel, prompt: string, aspect: AspectRatio, resolution?: string | null): Record<string, unknown> {
+function common(
+  m: HfModel,
+  prompt: string,
+  aspect: AspectRatio,
+  resolution?: string | null,
+  quality?: string | null
+): Record<string, unknown> {
   const p = m.props
   const body: Record<string, unknown> = { prompt: clip(prompt, promptLimit(m)) }
   if (p.aspect_ratio) {
@@ -162,7 +219,8 @@ function common(m: HfModel, prompt: string, aspect: AspectRatio, resolution?: st
   }
   const res = resolutionFor(m, resolution)
   if (res !== undefined) body.resolution = res
-  if (p.quality?.enum) body.quality = p.quality.enum.includes('high') ? 'high' : p.quality.enum[p.quality.enum.length - 1]
+  const q = qualityFor(m, quality)
+  if (q !== undefined) body.quality = q
   if (p.mode?.enum) body.mode = pick(p.mode, [])
   if (p.batch_size) body.batch_size = 1
   if (p.num_images) body.num_images = 1
@@ -181,8 +239,9 @@ function checkRequired(m: HfModel, body: Record<string, unknown>): Record<string
   return body
 }
 
-export function imageBody(m: HfModel, prompt: string, aspect: AspectRatio, refs: string[]): Record<string, unknown> {
-  const body = common(m, prompt, aspect)
+/** Settings left empty fall back to the economical defaults; character sheets pass explicit ones. */
+export function imageBody(m: HfModel, prompt: string, aspect: AspectRatio, refs: string[], settings: ImageSettings = {}): Record<string, unknown> {
+  const body = common(m, prompt, aspect, stillResolution(m, settings.resolution), stillQuality(m, settings.quality))
   const limit = maxRefs(m)
   if (limit > 0 && refs.length && m.input.field) body[m.input.field] = refs.slice(0, limit)
   return checkRequired(m, body)
@@ -219,10 +278,10 @@ export function describeModel(m: HfModel): string {
   if (m.id.startsWith('gemini/')) return 'Google Imagen 3 via Gemini API · ~$0.03/gambar'
   if (m.id === 'fal-ai/flux/schnell') return 'FLUX.1 Schnell via Fal.ai · sangat cepat & hemat (~$0.003/gambar)'
   if (m.id === 'fal-ai/flux/dev') return 'FLUX.1 Dev via Fal.ai · kualitas tinggi (~$0.025/gambar)'
-  const res = resolutionFor(m)?.toString().replace(/k$/, 'K')
   if (m.kind === 'image') {
+    // Size and quality are picked per project, next to the model.
     const refs = maxRefs(m)
-    return [refs ? `pakai lembar karakter (maks ${refs})` : 'tanpa lembar karakter', res && `hasil ${res}`].filter(Boolean).join(' · ')
+    return refs ? `pakai lembar karakter (maks ${refs})` : 'tanpa lembar karakter'
   }
   // Video resolution is picked per project, next to the model.
   return [durationLabel(m), m.input.mode === 'reference' ? 'gambar klip jadi referensi' : 'mulai dari gambar klip'].filter(Boolean).join(' · ')

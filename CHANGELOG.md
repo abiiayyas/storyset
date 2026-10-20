@@ -8,6 +8,13 @@ Cara menaikkan versi ada di [docs/pengembangan.md](docs/pengembangan.md#versi-da
 
 ## [Belum dirilis]
 
+### Ditambahkan
+- Ukuran (1K/2K/4K) dan kualitas (rendah/sedang/tinggi) gambar klip bisa dipilih per proyek, dengan perkiraan
+  kredit yang ikut berubah. Bawaannya sekarang 1K dan sedang (sebelumnya selalu 2K dan tinggi), jauh lebih murah
+  untuk model yang ditagih per ukuran dan kualitas seperti GPT Image. Lembar karakter tetap 2K dan tinggi.
+- Migrasi database 8: kolom `projects.image_resolution` dan `image_quality`.
+- Installer macOS (`.dmg`, x64) lewat `npx electron-builder --mac`; Whisper belum tersedia di sana.
+
 ## [1.0.0] - 2026-10-02
 
 Rilis pertama Bang Story (sebelumnya bernama Studio Cerita).

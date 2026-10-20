@@ -332,7 +332,7 @@ export function generateClipImage(clipId: string): Job {
     const prompt = clipPrompt(project, fresh, chars, refs.names, promptLimit(model))
     return {
       endpoint: model.id,
-      body: imageBody(model, prompt, project.aspectRatio, refs.urls),
+      body: imageBody(model, prompt, project.aspectRatio, refs.urls, { resolution: project.imageResolution, quality: project.imageQuality }),
       payload: { target: 'clip-image', model: model.id, prompt }
     }
   })
@@ -379,7 +379,8 @@ export function generateCharacterSheet(characterId: string): Job {
     const prompt = sheetPrompt(project, getCharacter(characterId))
     return {
       endpoint: model.id,
-      body: imageBody(model, prompt, '16:9', []),
+      // Sheets are the reference every clip copies, so they keep the best setting whatever the clips use.
+      body: imageBody(model, prompt, '16:9', [], { resolution: '2k', quality: 'high' }),
       payload: { target: 'sheet', model: model.id, prompt }
     }
   })
@@ -534,7 +535,8 @@ export async function estimateCredits(
   modelId: string,
   aspect: AspectRatio,
   seconds = 5,
-  resolution?: string | null
+  resolution?: string | null,
+  quality?: string | null
 ): Promise<CreditEstimate | null> {
   if (kind === 'image') {
     const prov = imageProviderOf(modelId)
@@ -544,7 +546,7 @@ export async function estimateCredits(
   const model = kind === 'image' ? getImageModel(modelId) : getVideoModel(modelId)
   const body =
     kind === 'image'
-      ? imageBody(model, 'estimate', aspect, [])
+      ? imageBody(model, 'estimate', aspect, [], { resolution, quality })
       : videoBody(model, 'estimate', 'https://example.com/frame.png', seconds, aspect, resolution)
   const key = `estimate:${model.id}:${JSON.stringify(body)}`
   const hit = readCache<CreditEstimate>(key)

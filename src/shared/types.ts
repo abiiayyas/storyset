@@ -107,6 +107,9 @@ export interface Project {
   videoModel: string | null
   /** One of the video model's resolutions, e.g. "720p"; null or unsupported uses the default (1080p when offered). */
   videoResolution: string | null
+  /** Clip still size and quality, e.g. "1k" / "medium"; null or unsupported by the model uses the economical default. */
+  imageResolution: string | null
+  imageQuality: string | null
   status: ProjectStatus
   step: Step
   coverAssetId: string | null

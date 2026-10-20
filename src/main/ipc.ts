@@ -187,8 +187,8 @@ export function registerIpc(): void {
   handle('whisper:remove', () => removeModel())
   handle('whisper:openFolder', () => openModelFolder())
   handle('generate:cancel', (jobId: string) => cancelJob(jobId))
-  handle('generate:estimate', (kind: 'image' | 'video', modelId: string, aspect: AspectRatio, seconds?: number, resolution?: string | null) =>
-    estimateCredits(kind, modelId, aspect, seconds, resolution)
+  handle('generate:estimate', (kind: 'image' | 'video', modelId: string, aspect: AspectRatio, seconds?: number, resolution?: string | null, quality?: string | null) =>
+    estimateCredits(kind, modelId, aspect, seconds, resolution, quality)
   )
 
   handle('assets:setActive', (clipId: string, assetId: string) => setActiveAsset(clipId, assetId))

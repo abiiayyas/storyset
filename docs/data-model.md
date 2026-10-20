@@ -33,6 +33,7 @@ dalam transaksi, lalu `user_version` dinaikkan.
 | 5 | `projects.video_resolution` |
 | 6 | `clips.video_camera`, `video_strength`, `transition_ms`, `voice_gain_db` |
 | 7 | `clips.media_in_ms`, `voice_in_ms`, `voice_out_ms`, `voice_start_ms` |
+| 8 | `projects.image_resolution`, `projects.image_quality` |
 
 **Aturan:** tambahkan migrasi baru di akhir. Jangan mengubah migrasi yang sudah ada, karena pengguna lama sudah
 menjalankannya.
@@ -46,6 +47,7 @@ menjalankannya.
 | `styleId` | gaya visual (`src/shared/styles.ts`, 20 gaya) |
 | `ttsProvider`, `ttsVoice` | `gemini` atau `elevenlabs` + ID suara |
 | `imageModel`, `videoModel`, `videoResolution` | model Higgsfield per proyek (null = bawaan aplikasi) |
+| `imageResolution`, `imageQuality` | ukuran dan kualitas gambar klip (null = hemat: 1K, sedang) |
 | `status`, `step` | `draft`/`script`/`storyboard`/`editing`/`exported`; langkah 1 Ide, 2 Naskah, 3 Storyboard, 4 Editor |
 | `coverAssetId` | gambar sampul kartu proyek |
 | `editor` | `EditorSettings` (JSON), lihat di bawah |

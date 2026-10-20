@@ -284,8 +284,8 @@ export function IdeaStep() {
               perClip={perClip}
               onChange={(patch) => {
                 updateProject(patch)
-                // New projects start with the models picked last; resolution stays with this project.
-                if (!('videoResolution' in patch)) void window.api.settings.set(patch)
+                // New projects start with the models picked last; resolution and quality stay with this project.
+                if (!('videoResolution' in patch || 'imageResolution' in patch || 'imageQuality' in patch)) void window.api.settings.set(patch)
               }}
             />
           </div>

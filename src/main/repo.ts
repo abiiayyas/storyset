@@ -47,6 +47,8 @@ const toProject = (r: Row): Project => ({
   imageModel: r.image_model,
   videoModel: r.video_model,
   videoResolution: r.video_resolution ?? null,
+  imageResolution: r.image_resolution ?? null,
+  imageQuality: r.image_quality ?? null,
   status: r.status,
   step: r.step,
   coverAssetId: r.cover_asset_id,
@@ -226,7 +228,8 @@ export function saveSnapshot(snap: ProjectSnapshot): number {
     db.prepare(
       `UPDATE projects SET title = @title, synopsis = @synopsis, duration_sec = @durationSec, language = @language,
         aspect_ratio = @aspectRatio, style_id = @styleId, tts_provider = @ttsProvider, tts_voice = @ttsVoice,
-        image_model = @imageModel, video_model = @videoModel, video_resolution = @videoResolution, status = @status, step = @step, editor_json = @editor, updated_at = @now
+        image_model = @imageModel, video_model = @videoModel, video_resolution = @videoResolution,
+        image_resolution = @imageResolution, image_quality = @imageQuality, status = @status, step = @step, editor_json = @editor, updated_at = @now
        WHERE id = @id`
     ).run({ ...p, editor: JSON.stringify(p.editor), now })
 
@@ -299,9 +302,9 @@ export function duplicateProject(id: string): ProjectSummary {
     const p = db.prepare('SELECT * FROM projects WHERE id = ?').get(id) as Row
     db.prepare(
       `INSERT INTO projects (id, title, synopsis, duration_sec, language, aspect_ratio, style_id, tts_provider, tts_voice,
-         image_model, video_model, video_resolution, status, step, cover_asset_id, editor_json, created_at, updated_at)
+         image_model, video_model, video_resolution, image_resolution, image_quality, status, step, cover_asset_id, editor_json, created_at, updated_at)
        SELECT @newId, @title, synopsis, duration_sec, language, aspect_ratio, style_id, tts_provider, tts_voice,
-         image_model, video_model, video_resolution, status, step, @cover, editor_json, @now, @now FROM projects WHERE id = @id`
+         image_model, video_model, video_resolution, image_resolution, image_quality, status, step, @cover, editor_json, @now, @now FROM projects WHERE id = @id`
     ).run({ newId, id, title: `${p.title} (salinan)`, cover: mapId(p.cover_asset_id), now })
     for (const a of src.assets) {
       db.prepare(

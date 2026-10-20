@@ -56,7 +56,14 @@ export interface StudioApi {
     syncCaptions(projectId: string, mode?: 'stale' | 'all'): Promise<Job>
     cancel(jobId: string): Promise<void>
     /** Credits for one image, or one video of about `seconds`, with this model. Null without a working key. */
-    estimate(kind: 'image' | 'video', modelId: string, aspect: AspectRatio, seconds?: number, resolution?: string | null): Promise<CreditEstimate | null>
+    estimate(
+      kind: 'image' | 'video',
+      modelId: string,
+      aspect: AspectRatio,
+      seconds?: number,
+      resolution?: string | null,
+      quality?: string | null
+    ): Promise<CreditEstimate | null>
   }
   clips: {
     /** Splits a clip at `atMs` into two clips (picture, voice and narration divided at the nearest pause). */

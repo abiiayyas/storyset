@@ -1,6 +1,17 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Film, Image as ImageIcon, Move, Users } from 'lucide-react'
-import { effectiveResolution, fitDuration, getImageModel, getVideoModel, hfModelOptions, maxRefs, resolutionOptions } from '@shared/higgsfield'
+import {
+  effectiveImageResolution,
+  effectiveQuality,
+  effectiveResolution,
+  fitDuration,
+  getImageModel,
+  getVideoModel,
+  hfModelOptions,
+  maxRefs,
+  qualityOptions,
+  resolutionOptions
+} from '@shared/higgsfield'
 import type { CreditEstimate, ModelOption, Project } from '@shared/types'
 import { ModelLogo } from '../../components/ModelLogo'
 import { ModelPicker } from '../../components/ModelPicker'
@@ -11,6 +22,7 @@ import { useEstimate, useEstimates } from '../../lib/useEstimate'
 const IMAGE_OPTIONS = hfModelOptions('image')
 const VIDEO_OPTIONS = hfModelOptions('video')
 const IMAGE_IDS = IMAGE_OPTIONS.map((o) => o.id)
+const QUALITY_LABELS: Record<string, string> = { low: 'Rendah', medium: 'Sedang', high: 'Tinggi' }
 const VIDEO_IDS = VIDEO_OPTIONS.map((o) => o.id)
 
 /** Adds each model's estimated credits to its picker row once a Higgsfield key is known to exist. */
@@ -93,12 +105,22 @@ export function ModelSection({
   project: Project
   clipCount: number
   perClip: number
-  onChange: (patch: { imageModel?: string; videoModel?: string; videoResolution?: string | null }) => void
+  onChange: (patch: {
+    imageModel?: string
+    videoModel?: string
+    videoResolution?: string | null
+    imageResolution?: string | null
+    imageQuality?: string | null
+  }) => void
 }) {
   const image = getImageModel(project.imageModel)
   const video = getVideoModel(project.videoModel)
   const seconds = fitDuration(video, perClip) ?? perClip
-  const imageCost = useEstimate('image', image.id, project.aspectRatio)
+  const imageSizes = resolutionOptions(image)
+  const imageSize = effectiveImageResolution(image, project.imageResolution)
+  const imageQualities = qualityOptions(image)
+  const imageQuality = effectiveQuality(image, project.imageQuality)
+  const imageCost = useEstimate('image', image.id, project.aspectRatio, undefined, project.imageResolution, project.imageQuality)
   const resolutions = resolutionOptions(video)
   const resolution = effectiveResolution(video, project.videoResolution)
   const videoCost = useEstimate('video', video.id, project.aspectRatio, perClip, resolution)
@@ -112,7 +134,7 @@ export function ModelSection({
   const hasImageKey = !!keys.find((k) => k.provider === imageProvider)?.configured
   const hasHfKey = !!keys.find((k) => k.provider === 'higgsfield')?.configured
 
-  const imageCosts = useEstimates('image', IMAGE_IDS, project.aspectRatio, undefined, hasImageKey)
+  const imageCosts = useEstimates('image', IMAGE_IDS, project.aspectRatio, undefined, hasImageKey, project.imageResolution, project.imageQuality)
   const videoCosts = useEstimates('video', VIDEO_IDS, project.aspectRatio, perClip, hasHfKey)
   const imageModels = useMemo(() => withCosts(IMAGE_OPTIONS, imageCosts, () => '', hasImageKey), [imageCosts, hasImageKey])
   const videoModels = useMemo(
@@ -140,6 +162,30 @@ export function ModelSection({
             menuClassName="w-[430px]"
             onChange={(id) => onChange({ imageModel: id })}
           />
+          {imageSizes.length > 1 && (
+            <div className="flex items-center gap-2.5">
+              <span className="w-14 shrink-0 text-[12.5px] font-medium text-ink-2">Ukuran</span>
+              <Segmented
+                size="sm"
+                value={imageSize ?? imageSizes[0]}
+                onChange={(v) => onChange({ imageResolution: v })}
+                options={imageSizes.map((r) => ({ id: r, label: /^\d+k$/i.test(r) ? r.toUpperCase() : r }))}
+                className="min-w-0 flex-1"
+              />
+            </div>
+          )}
+          {imageQualities.length > 1 && (
+            <div className="flex items-center gap-2.5">
+              <span className="w-14 shrink-0 text-[12.5px] font-medium text-ink-2">Kualitas</span>
+              <Segmented
+                size="sm"
+                value={imageQuality ?? imageQualities[0]}
+                onChange={(v) => onChange({ imageQuality: v })}
+                options={imageQualities.map((q) => ({ id: q, label: QUALITY_LABELS[q] ?? q }))}
+                className="min-w-0 flex-1"
+              />
+            </div>
+          )}
           <p className="text-[12.5px] leading-snug text-ink-2">
             <Cost value={imageCost} hasKey={hasImageKey} provider={imageProvider} modelId={image.id} clipCount={clipCount}>
               {(c) => (

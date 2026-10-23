@@ -9,6 +9,10 @@ Cara menaikkan versi ada di [docs/pengembangan.md](docs/pengembangan.md#versi-da
 ## [Belum dirilis]
 
 ### Ditambahkan
+- **CLI di komputer sebagai sumber AI:** menyusun cerita dan naskah lewat Claude Code (`claude`), Codex CLI (`codex`),
+  Google Antigravity (`agy`), atau perintah shell sendiri yang sudah login di komputer, tanpa kunci API. Membuat gambar
+  klip dan lembar karakter lewat Antigravity atau perintah sendiri (model **CLI di komputer** di pilihan Model AI, tanpa
+  biaya per gambar, ±1 menit per gambar). Aplikasi sengaja tidak memakai `--dangerously-skip-permissions`.
 - **Scene motion (Remotion):** klip bisa berupa kartu animasi (judul, poin, angka berhitung, grafik batang) tanpa gambar
   AI dan tanpa kredit. Pilih "Motion" di Storyboard, edit dengan pratinjau langsung, atau minta AI memilih adegan yang
   cocok. Hasil dirender jadi video klip biasa. Installer ikut membawa Chrome Headless Shell (+±100 MB). Migrasi 9:

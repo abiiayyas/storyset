@@ -2,10 +2,14 @@ import type { GraphicSpec } from './graphics'
 export type ProjectStatus = 'draft' | 'script' | 'storyboard' | 'editing' | 'exported'
 export type AspectRatio = '16:9' | '9:16'
 export type TtsProvider = 'gemini' | 'elevenlabs'
-export type LlmProvider = 'gemini' | 'openrouter' | 'groq' | 'custom'
-export type ApiProvider = 'higgsfield' | 'gemini' | 'elevenlabs' | 'openrouter' | 'groq' | 'custom' | 'fal'
-/** Where a live model list comes from: an LLM provider, or a TTS catalog. */
-export type ModelSource = LlmProvider | 'gemini-tts' | 'elevenlabs'
+export type LlmProvider = 'gemini' | 'openrouter' | 'groq' | 'custom' | 'cli'
+export type ApiProvider = 'higgsfield' | 'gemini' | 'elevenlabs' | 'openrouter' | 'groq' | 'custom' | 'fal' | 'cli' | 'cli-image'
+/** Which program the `cli` LLM provider runs; `custom` is a user-written shell command. */
+export type CliTool = 'claude' | 'codex' | 'agy' | 'custom'
+/** Which program makes images for the `cli/image` model; only Antigravity has a built-in image tool. */
+export type CliImageTool = 'agy' | 'custom'
+/** Where a live model list comes from: an LLM provider with an API, or a TTS catalog. The CLI has no list. */
+export type ModelSource = Exclude<LlmProvider, 'cli'> | 'gemini-tts' | 'elevenlabs'
 export type MotionType = 'camera' | 'video'
 export type CameraPresetId = 'zoomin' | 'zoomout' | 'panleft' | 'panright' | 'kenburns' | 'shake' | 'static'
 export type MotionStrength = 'halus' | 'sedang' | 'kuat'
@@ -296,6 +300,14 @@ export interface AppSettings {
   llmModels: Record<LlmProvider, string>
   /** Base URL of an OpenAI-compatible endpoint, e.g. http://localhost:11434/v1 */
   customBaseUrl: string
+  /** Program that the `cli` LLM provider runs on this machine. */
+  cliTool: CliTool
+  /** Shell command for `cliTool: 'custom'`: gets the prompt on stdin and must print the reply on stdout. `{model}` is replaced by the chosen model. */
+  cliCommand: string
+  /** Program that makes images when a project uses the `cli/image` model. */
+  cliImageTool: CliImageTool
+  /** Shell command for `cliImageTool: 'custom'`: gets the prompt on stdin and must write one image file to `{output}`. `{aspect}` is 16:9 or 9:16. */
+  cliImageCommand: string
   geminiTtsModel: string
   elevenModel: string
   /** Higgsfield models for new projects: the last ones picked in the Idea step. */

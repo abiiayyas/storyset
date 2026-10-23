@@ -1,6 +1,8 @@
 import type {
   ApiProvider,
   AspectRatio,
+  CliImageTool,
+  CliTool,
   AppSettings,
   Asset,
   CharacterPatchEvent,
@@ -96,6 +98,10 @@ export interface StudioApi {
     setKey(provider: ApiProvider, key: string): Promise<KeyTestResult>
     /** Saves an OpenAI-compatible endpoint; the key is optional for local servers. */
     setCustom(baseUrl: string, key: string): Promise<KeyTestResult>
+    /** Picks the CLI that writes stories (for `custom`, its shell command), then tests it. */
+    setCli(tool: CliTool, command: string): Promise<KeyTestResult>
+    /** Picks the CLI that draws images for the `cli/image` model (for `custom`, its shell command), then tests it. */
+    setCliImage(tool: CliImageTool, command: string): Promise<KeyTestResult>
     clearKey(provider: ApiProvider): Promise<void>
     /** The full stored key, only for the "show key" button. */
     revealKey(provider: ApiProvider): Promise<string | null>

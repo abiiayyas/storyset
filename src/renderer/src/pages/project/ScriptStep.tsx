@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { ArrowDown, ArrowRight, ArrowUp, Bot, MoreHorizontal, Plus, RefreshCw, Sparkles, Trash2 } from 'lucide-react'
-import { DURATIONS, llmName } from '@shared/models'
+import { DURATIONS, llmModelLabel, llmName, llmNeedsModel } from '@shared/models'
 import { estimateNarrationMs, needsVisual, wordCount } from '@shared/script'
 import { VOICE_TAGS } from '@shared/speech'
 import type { Clip, LlmProvider } from '@shared/types'
@@ -287,7 +287,7 @@ export function ScriptStep() {
           <span className="flex items-center gap-1.5 text-[13px] text-muted">
             <Bot className="size-3.5" />
             Visual disusun oleh {writer ? `${llmName(writer.provider)} · ` : ''}
-            <span className={cx('font-mono', writer && !writer.model && 'text-accent-dark')}>{writer ? writer.model || 'model belum dipilih' : '…'}</span>
+            <span className={cx('font-mono', writer && !writer.model && llmNeedsModel(writer.provider) && 'text-accent-dark')}>{writer ? llmModelLabel(writer.provider, writer.model) : '…'}</span>
             <button type="button" onClick={() => void openSettings()} className="font-semibold text-accent-dark hover:underline">
               Ganti
             </button>

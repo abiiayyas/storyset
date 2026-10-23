@@ -13,6 +13,7 @@ const FAMILY_LOGO: Record<string, { src?: string; bg: string; inset: number }> =
   Google: { src: 'providers/gemini.svg', bg: '#FFFFFF', inset: 0.18 },
   Flux: { bg: '#18181B', inset: 0.2 },
   Fal: { bg: '#18181B', inset: 0.2 },
+  CLI: { bg: '#18181B', inset: 0.2 },
   Soul: { src: 'providers/higgsfield.png', bg: '#D1FE17', inset: 0 },
   'Cinema Studio': { src: 'providers/higgsfield.png', bg: '#D1FE17', inset: 0 },
   Grok: { src: 'models/grok.svg', bg: '#FFFFFF', inset: 0.2 },
@@ -42,6 +43,8 @@ export function ModelLogo({ family, size = 30, className }: { family?: string; s
     >
       {src ? (
         <img src={src} alt="" draggable={false} style={{ width: inner, height: inner }} className="object-contain" />
+      ) : family === 'CLI' ? (
+        <span className="font-mono font-black text-white text-[11px]">&gt;_</span>
       ) : family === 'Flux' || family === 'Fal' ? (
         <span className="font-mono font-black text-white text-[11px]">fal</span>
       ) : (

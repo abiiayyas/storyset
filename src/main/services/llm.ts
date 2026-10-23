@@ -1,6 +1,7 @@
 import type { KeyTestResult, LlmProvider, ModelList, ModelOption, ModelSource } from '@shared/types'
 import { getSecret, PROVIDER_NAMES } from '../secrets'
 import { getSettings, readCache, writeCache } from '../settings'
+import * as cli from './cli'
 import * as eleven from './elevenlabs'
 import * as gemini from './gemini'
 import { readError } from './http'
@@ -9,7 +10,7 @@ import { extractJson } from './json'
 const STALE_MS = 24 * 60 * 60 * 1000
 const GENERATE_TIMEOUT_MS = 4 * 60 * 1000
 
-type CompatProvider = Exclude<LlmProvider, 'gemini'>
+type CompatProvider = Exclude<LlmProvider, 'gemini' | 'cli'>
 
 interface Compat {
   provider: CompatProvider
@@ -185,7 +186,7 @@ export async function listModels(source: ModelSource, refresh = false): Promise<
 
 // ---------- key checks ----------
 
-export async function testLlm(provider: LlmProvider, key?: string | null, baseUrl?: string): Promise<KeyTestResult> {
+export async function testLlm(provider: Exclude<LlmProvider, 'cli'>, key?: string | null, baseUrl?: string): Promise<KeyTestResult> {
   if (provider === 'gemini') return gemini.testKey(key ?? undefined)
   try {
     const c = compat(provider, key, baseUrl)
@@ -303,6 +304,7 @@ export function activeLlm(): ActiveLlm {
 /** Generates a JSON object that follows `schema` with whichever LLM the user made active. */
 export async function generateJson<T>(req: { system: string; prompt: string; schema: object; name: string; signal?: AbortSignal }): Promise<T> {
   const { provider, model } = activeLlm()
+  if (provider === 'cli') return (await cli.generateJson(model, req.system, req.prompt, req.schema, req.signal)) as T
   if (!model) throw new LlmError(`Pilih model ${PROVIDER_NAMES[provider]} dulu di Pengaturan › Kunci API dan model.`)
   if (provider === 'gemini') return (await gemini.generateJson(model, req.system, req.prompt, req.schema)) as T
   return (await chatJson(compat(provider), model, req.system, req.prompt, req.schema, req.name, req.signal)) as T

@@ -3,7 +3,7 @@ import type { ApiProvider, KeyStatus } from '@shared/types'
 import { getDb } from './db'
 import { getSettings } from './settings'
 
-const PROVIDERS: ApiProvider[] = ['higgsfield', 'gemini', 'elevenlabs', 'openrouter', 'groq', 'custom', 'fal']
+const PROVIDERS: ApiProvider[] = ['higgsfield', 'gemini', 'elevenlabs', 'openrouter', 'groq', 'custom', 'fal', 'cli', 'cli-image']
 
 export const PROVIDER_NAMES: Record<ApiProvider, string> = {
   higgsfield: 'Higgsfield',
@@ -12,7 +12,9 @@ export const PROVIDER_NAMES: Record<ApiProvider, string> = {
   openrouter: 'OpenRouter',
   groq: 'Groq',
   custom: 'endpoint custom',
-  fal: 'Fal.ai'
+  fal: 'Fal.ai',
+  cli: 'CLI AI',
+  'cli-image': 'CLI gambar'
 }
 
 interface SecretRow {
@@ -90,13 +92,13 @@ export function clearSecret(provider: ApiProvider): void {
   getDb().prepare('DELETE FROM secrets WHERE provider = ?').run(provider)
 }
 
-/** Test results for the custom endpoint are kept even when it has no key (local servers). */
+/** Providers without a key (custom endpoint, CLI) still keep their test result, in a row with an empty value. */
 export function recordCheck(provider: ApiProvider, ok: boolean, message: string): void {
   const now = Date.now()
   const res = getDb()
     .prepare('UPDATE secrets SET last_ok = ?, last_message = ?, checked_at = ? WHERE provider = ?')
     .run(ok ? 1 : 0, message, now, provider)
-  if (res.changes === 0 && provider === 'custom') {
+  if (res.changes === 0 && (provider === 'custom' || provider === 'cli' || provider === 'cli-image')) {
     getDb()
       .prepare('INSERT INTO secrets (provider, value, last_ok, last_message, checked_at) VALUES (?, ?, ?, ?, ?)')
       .run(provider, Buffer.alloc(0), ok ? 1 : 0, message, now)
@@ -113,7 +115,7 @@ export function keyStatuses(): KeyStatus[] {
     const unreadable = hasKey && value == null
     return {
       provider,
-      configured: provider === 'custom' ? !!customUrl : hasKey,
+      configured: provider === 'custom' ? !!customUrl : provider === 'cli' || provider === 'cli-image' ? !!r : hasKey,
       lastOk: unreadable ? false : r?.last_ok == null ? null : r.last_ok === 1,
       lastMessage: unreadable ? 'Kunci tersimpan tapi tidak bisa dibuka lagi. Masukkan ulang kuncinya.' : (r?.last_message ?? null),
       checkedAt: r?.checked_at ?? null,

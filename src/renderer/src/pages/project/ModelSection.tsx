@@ -46,7 +46,7 @@ function Cost({
 }: {
   value: CreditEstimate | null | undefined
   hasKey: boolean | null
-  provider?: 'higgsfield' | 'gemini' | 'fal'
+  provider?: 'higgsfield' | 'gemini' | 'fal' | 'cli-image'
   modelId?: string
   clipCount?: number
   children: (credits: number) => ReactNode
@@ -54,6 +54,7 @@ function Cost({
   if (hasKey === false) {
     if (provider === 'gemini') return <span className="text-muted">Kunci Google Gemini belum diisi di Pengaturan.</span>
     if (provider === 'fal') return <span className="text-muted">Kunci Fal.ai belum diisi di Pengaturan.</span>
+    if (provider === 'cli-image') return <span className="text-muted">CLI gambar belum diatur dan dites di Pengaturan.</span>
     return <span className="text-muted">Perkiraan kredit muncul setelah kunci Higgsfield diisi di Pengaturan.</span>
   }
   if (value === undefined)
@@ -71,6 +72,9 @@ function Cost({
         ≈ ${usdPer} per gambar · {clipCount} gambar ≈ <b className="font-semibold text-ink">${(usdPer * clipCount).toFixed(2)}</b> (Google Gemini)
       </span>
     )
+  }
+  if (provider === 'cli-image') {
+    return <span>Tanpa biaya per gambar (memakai kuota CLI di komputermu) · ±1 menit per gambar</span>
   }
   if (provider === 'fal') {
     const usdPer = value.usd ?? (modelId?.includes('schnell') ? 0.003 : 0.025)
@@ -130,7 +134,7 @@ export function ModelSection({
     void window.api.settings.keys().then((k) => setKeys(k))
   }, [])
 
-  const imageProvider = image.id.startsWith('gemini/') ? 'gemini' : image.id.startsWith('fal-ai/') ? 'fal' : 'higgsfield'
+  const imageProvider = image.id.startsWith('gemini/') ? 'gemini' : image.id.startsWith('fal-ai/') ? 'fal' : image.id.startsWith('cli/') ? 'cli-image' : 'higgsfield'
   const hasImageKey = !!keys.find((k) => k.provider === imageProvider)?.configured
   const hasHfKey = !!keys.find((k) => k.provider === 'higgsfield')?.configured
 
@@ -158,7 +162,7 @@ export function ModelSection({
             footerNote={hasImageKey ? (imageProvider === 'higgsfield' ? 'kredit per gambar, perkiraan Higgsfield' : 'biaya per gambar') : undefined}
             renderIcon={(m) => <ModelLogo family={m.family} />}
             detail="description"
-            tagFilters={['Rekomendasi', 'Referensi', 'Hemat / Cepat', 'Google', 'Fal.ai', 'GPT Image', 'Soul', 'Recraft', '4K']}
+            tagFilters={['Rekomendasi', 'Referensi', 'Hemat / Cepat', 'Google', 'Fal.ai', 'CLI', 'GPT Image', 'Soul', 'Recraft', '4K']}
             menuClassName="w-[430px]"
             onChange={(id) => onChange({ imageModel: id })}
           />

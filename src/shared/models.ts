@@ -1,4 +1,4 @@
-import type { LlmProvider } from './types'
+import type { CliImageTool, CliTool, LlmProvider } from './types'
 
 export const LLM_PROVIDERS: { id: LlmProvider; name: string; note: string; link: string | null; linkLabel: string }[] = [
   {
@@ -28,11 +28,42 @@ export const LLM_PROVIDERS: { id: LlmProvider; name: string; note: string; link:
     note: 'Server apa pun yang kompatibel dengan OpenAI API, misalnya Ollama, LM Studio, vLLM, DeepSeek, atau xAI Grok.',
     link: null,
     linkLabel: ''
+  },
+  {
+    id: 'cli',
+    name: 'CLI di komputer',
+    note: 'Pakai Claude Code, Codex CLI, Antigravity, atau perintah sendiri yang sudah terpasang dan login di komputer ini. Tanpa kunci API.',
+    link: null,
+    linkLabel: ''
   }
 ]
 
 export function llmName(id: LlmProvider): string {
   return LLM_PROVIDERS.find((p) => p.id === id)?.name ?? id
+}
+
+/** CLIs that the `cli` provider knows how to run. `bin` is the executable looked up on PATH. */
+export const CLI_TOOLS: { id: CliTool; name: string; bin: string | null; note: string; modelHint: string }[] = [
+  { id: 'claude', name: 'Claude Code', bin: 'claude', note: 'Perintah `claude`, pakai login Claude di komputer ini.', modelHint: 'opus, sonnet, atau haiku' },
+  { id: 'codex', name: 'Codex CLI', bin: 'codex', note: 'Perintah `codex exec`, pakai login ChatGPT/OpenAI di komputer ini.', modelHint: 'nama model yang dikenali Codex' },
+  { id: 'agy', name: 'Antigravity', bin: 'agy', note: 'Perintah `agy`, pakai login Google Antigravity di komputer ini.', modelHint: 'ID dari `agy models`, misalnya gemini-3.8-flash-medium' },
+  { id: 'custom', name: 'Perintah sendiri', bin: null, note: 'CLI lain. Prompt dikirim lewat stdin, balasan dibaca dari stdout.', modelHint: 'menggantikan {model} di perintah' }
+]
+
+/** CLIs that can make images for the `cli/image` model. Claude Code and Codex are left out: see docs/layanan-ai.md. */
+export const CLI_IMAGE_TOOLS: { id: CliImageTool; name: string; bin: string | null; note: string }[] = [
+  { id: 'agy', name: 'Antigravity', bin: 'agy', note: 'Memakai alat gambar bawaan Antigravity (`generate_image`). Satu gambar sekitar 1 menit.' },
+  { id: 'custom', name: 'Perintah sendiri', bin: null, note: 'CLI lain. Prompt masuk lewat stdin, perintah harus menulis satu file gambar ke {output}.' }
+]
+
+/** The CLI picks its own model when none is set, so only API providers need one chosen in Settings. */
+export function llmNeedsModel(id: LlmProvider): boolean {
+  return id !== 'cli'
+}
+
+/** What the UI shows for the chosen model; the CLI uses its own default when none is set. */
+export function llmModelLabel(id: LlmProvider, model: string): string {
+  return model || (llmNeedsModel(id) ? 'model belum dipilih' : 'model bawaan CLI')
 }
 
 /** Higgsfield image and video models live in ./higgsfield.ts, generated from the API docs. */

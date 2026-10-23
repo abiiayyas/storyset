@@ -31,6 +31,7 @@ import {
 import { dropCache, getSettings, readCache, writeCache } from './settings'
 import { probeDurationMs, probeSize } from './services/audio'
 import * as eleven from './services/elevenlabs'
+import * as cli from './services/cli'
 import * as fal from './services/fal'
 import * as gemini from './services/gemini'
 import * as hf from './services/higgsfield'
@@ -236,10 +237,11 @@ function updateJobPayload(jobId: string, payload: HfPayload): void {
   getDb().prepare('UPDATE jobs SET payload_json = ? WHERE id = ?').run(JSON.stringify(payload), jobId)
 }
 
-export function imageProviderOf(modelId: string | null | undefined): 'gemini' | 'fal' | 'higgsfield' {
+export function imageProviderOf(modelId: string | null | undefined): 'gemini' | 'fal' | 'cli' | 'higgsfield' {
   if (!modelId) return 'higgsfield'
   if (modelId.startsWith('gemini/') || modelId.startsWith('google/') || modelId === 'imagen-3.0-generate-002') return 'gemini'
   if (modelId.startsWith('fal-ai/') || modelId.startsWith('fal/')) return 'fal'
+  if (modelId.startsWith('cli/')) return 'cli'
   return 'higgsfield'
 }
 
@@ -309,6 +311,19 @@ export function generateClipImage(clipId: string): Job {
     })
   }
 
+  if (provider === 'cli') {
+    return runJob(job, 'cli', async (ctx) => {
+      ctx.progress(0.1, 'Menyiapkan prompt')
+      const fresh = getClip(clipId)
+      const chars = charactersOf(project.id).filter((c) => fresh.characterIds.includes(c.id))
+      const prompt = clipPrompt(project, fresh, chars, [], 4000)
+      ctx.progress(0.3, 'Membuat gambar lewat CLI (sekitar 1 menit)')
+      const { bytes, contentType } = await cli.generateImage(prompt, project.aspectRatio, ctx.signal)
+      ctx.progress(0.9, 'Menyimpan gambar')
+      return finishDirectImage(job, 'clip-image', modelId, prompt, bytes, contentType)
+    })
+  }
+
   if (provider === 'fal') {
     return runJob(job, 'fal', async (ctx) => {
       ctx.progress(0.1, 'Menyiapkan prompt')
@@ -356,6 +371,17 @@ export function generateCharacterSheet(characterId: string): Job {
       ctx.progress(0.3, 'Membuat lembar karakter dengan Google Imagen 3')
       const geminiModel = modelId.replace(/^gemini\//, '')
       const { bytes, contentType } = await gemini.generateImage(prompt, '16:9', geminiModel, ctx.signal)
+      ctx.progress(0.9, 'Menyimpan lembar karakter')
+      return finishDirectImage(job, 'sheet', modelId, prompt, bytes, contentType)
+    })
+  }
+
+  if (provider === 'cli') {
+    return runJob(job, 'cli', async (ctx) => {
+      ctx.progress(0.1, 'Menyiapkan prompt')
+      const prompt = sheetPrompt(project, getCharacter(characterId))
+      ctx.progress(0.3, 'Membuat lembar karakter lewat CLI (sekitar 1 menit)')
+      const { bytes, contentType } = await cli.generateImage(prompt, '16:9', ctx.signal)
       ctx.progress(0.9, 'Menyimpan lembar karakter')
       return finishDirectImage(job, 'sheet', modelId, prompt, bytes, contentType)
     })
@@ -544,6 +570,7 @@ export async function estimateCredits(
     const prov = imageProviderOf(modelId)
     if (prov === 'gemini') return { credits: 0, usd: 0.03 }
     if (prov === 'fal') return { credits: 0, usd: modelId.includes('schnell') ? 0.003 : 0.025 }
+    if (prov === 'cli') return { credits: 0, usd: 0 }
   }
   const model = kind === 'image' ? getImageModel(modelId) : getVideoModel(modelId)
   const body =

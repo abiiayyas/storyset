@@ -74,7 +74,21 @@ export const FAL_IMAGE_MODELS: HfModel[] = [
   }
 ]
 
-export const ALL_IMAGE_MODELS: HfModel[] = [...HF_IMAGE_MODELS, ...GEMINI_IMAGE_MODELS, ...FAL_IMAGE_MODELS]
+export const CLI_IMAGE_MODELS: HfModel[] = [
+  {
+    id: 'cli/image',
+    name: 'CLI di komputer',
+    family: 'CLI',
+    kind: 'image',
+    input: { field: null, mode: 'none', max: 0 },
+    required: ['prompt'],
+    props: { prompt: { type: 'string', maxLength: 4000 } },
+    durations: null,
+    tags: ['CLI', 'Tanpa kunci']
+  }
+]
+
+export const ALL_IMAGE_MODELS: HfModel[] = [...HF_IMAGE_MODELS, ...GEMINI_IMAGE_MODELS, ...FAL_IMAGE_MODELS, ...CLI_IMAGE_MODELS]
 
 export const DEFAULT_IMAGE_MODEL = 'marketing-studio/image/sunburst'
 export const DEFAULT_VIDEO_MODEL = 'kling-video/v3.0/std/image-to-video'
@@ -275,6 +289,7 @@ export function videoBody(
 
 /** What the app will actually request from this model, in words. */
 export function describeModel(m: HfModel): string {
+  if (m.id === 'cli/image') return 'Gambar dari CLI di komputer (Antigravity atau perintah sendiri) · tanpa biaya per gambar, ±1 menit per gambar, tanpa lembar karakter'
   if (m.id.startsWith('gemini/')) return 'Google Imagen 3 via Gemini API · ~$0.03/gambar'
   if (m.id === 'fal-ai/flux/schnell') return 'FLUX.1 Schnell via Fal.ai · sangat cepat & hemat (~$0.003/gambar)'
   if (m.id === 'fal-ai/flux/dev') return 'FLUX.1 Dev via Fal.ai · kualitas tinggi (~$0.025/gambar)'

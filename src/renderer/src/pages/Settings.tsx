@@ -17,15 +17,15 @@ import {
   Trash2
 } from 'lucide-react'
 import { HF_IMAGE_MODELS, HF_VIDEO_MODELS } from '@shared/higgsfield'
-import { LANGUAGES, LLM_PROVIDERS } from '@shared/models'
-import type { ApiProvider, AppSettings, KeyStatus, KeyTestResult, LlmProvider, TtsProvider } from '@shared/types'
+import { CLI_IMAGE_TOOLS, CLI_TOOLS, LANGUAGES, LLM_PROVIDERS } from '@shared/models'
+import type { ApiProvider, AppSettings, CliImageTool, CliTool, KeyStatus, KeyTestResult, LlmProvider, TtsProvider } from '@shared/types'
 import { Logo } from '../components/Logo'
 import { ModelPicker } from '../components/ModelPicker'
 import { ProviderLogo, type ProviderLogoId } from '../components/ProviderLogo'
 import { Select } from '../components/Select'
 import { AboutSection } from './AboutSection'
 import { WhisperSection } from './WhisperSection'
-import { Badge, Button, Field, IconButton, confirmDialog, cx, inputCls } from '../components/ui'
+import { Badge, Button, Field, IconButton, Segmented, confirmDialog, cx, inputCls } from '../components/ui'
 import { errorText, relativeTime } from '../lib/format'
 import { useModels } from '../lib/useModels'
 import { useApp } from '../store/app'
@@ -361,17 +361,15 @@ function SectionTitle({ icon, title, sub }: { icon: ReactNode; title: string; su
   )
 }
 
-function LlmSection({ settings, statusOf, onChanged, onSettings }: { settings: AppSettings; statusOf: (p: ApiProvider) => KeyStatus | undefined; onChanged: () => void; onSettings: (s: AppSettings) => void }) {
-  const { toast } = useApp()
-  const provider = settings.llmProvider
-  const spec = LLM_PROVIDERS.find((p) => p.id === provider)!
-  const status = statusOf(provider)
-  const configured = !!status?.configured
-  const [openPicker, setOpenPicker] = useState(false)
-  const models = useModels(provider, configured && status?.lastOk !== false, provider === 'custom' ? settings.customBaseUrl : '')
-  const model = settings.llmModels[provider]
-  const selected = models.models.find((m) => m.id === model)
+interface LlmCardProps {
+  settings: AppSettings
+  statusOf: (p: ApiProvider) => KeyStatus | undefined
+  onChanged: () => void
+  onSettings: (s: AppSettings) => void
+}
 
+function LlmSection({ settings, statusOf, onChanged, onSettings }: LlmCardProps) {
+  const provider = settings.llmProvider
   const options: ProviderOption<LlmProvider>[] = LLM_PROVIDERS.map((p) => ({
     id: p.id,
     name: p.name,
@@ -390,58 +388,190 @@ function LlmSection({ settings, statusOf, onChanged, onSettings }: { settings: A
       <ProviderSelect
         value={provider}
         options={options}
-        onChange={async (id) => {
-          setOpenPicker(false)
-          onSettings(await window.api.settings.set({ llmProvider: id }))
+        onChange={async (id) => onSettings(await window.api.settings.set({ llmProvider: id }))}
+      />
+      {provider === 'cli' ? (
+        <CliCard settings={settings} statusOf={statusOf} onChanged={onChanged} onSettings={onSettings} />
+      ) : (
+        <ApiLlmCard key={provider} provider={provider} settings={settings} statusOf={statusOf} onChanged={onChanged} onSettings={onSettings} />
+      )}
+    </>
+  )
+}
+
+function ApiLlmCard({ provider, settings, statusOf, onChanged, onSettings }: LlmCardProps & { provider: Exclude<LlmProvider, 'cli'> }) {
+  const { toast } = useApp()
+  const spec = LLM_PROVIDERS.find((p) => p.id === provider)!
+  const status = statusOf(provider)
+  const configured = !!status?.configured
+  const [openPicker, setOpenPicker] = useState(false)
+  const models = useModels(provider, configured && status?.lastOk !== false, provider === 'custom' ? settings.customBaseUrl : '')
+  const model = settings.llmModels[provider]
+  const selected = models.models.find((m) => m.id === model)
+
+  return (
+    <Card>
+      <KeyForm
+        provider={provider}
+        name={spec.name}
+        status={status}
+        help={provider === 'custom' ? 'Contoh: http://localhost:11434/v1 untuk Ollama, http://localhost:1234/v1 untuk LM Studio, https://api.x.ai/v1 untuk Grok.' : 'Setelah kunci disimpan, daftar model diambil langsung dari penyedianya.'}
+        hint={provider === 'gemini' && settings.defaultTtsProvider === 'gemini' ? 'Kunci ini dipakai bersama untuk suara narator Gemini TTS.' : undefined}
+        link={spec.link}
+        linkLabel={spec.linkLabel}
+        customUrl={settings.customBaseUrl}
+        onChanged={onChanged}
+        onSaved={async (r) => {
+          if (!r.ok) return
+          onSettings(await window.api.settings.get())
+          if (configured) void models.refresh()
+          if (!model) setOpenPicker(true)
         }}
       />
-      <Card key={provider}>
-        <KeyForm
-          provider={provider}
-          name={spec.name}
-          status={status}
-          help={provider === 'custom' ? 'Contoh: http://localhost:11434/v1 untuk Ollama, http://localhost:1234/v1 untuk LM Studio, https://api.x.ai/v1 untuk Grok.' : 'Setelah kunci disimpan, daftar model diambil langsung dari penyedianya.'}
-          hint={provider === 'gemini' && settings.defaultTtsProvider === 'gemini' ? 'Kunci ini dipakai bersama untuk suara narator Gemini TTS.' : undefined}
-          link={spec.link}
-          linkLabel={spec.linkLabel}
-          customUrl={settings.customBaseUrl}
-          onChanged={onChanged}
-          onSaved={async (r) => {
-            if (!r.ok) return
-            onSettings(await window.api.settings.get())
-            if (configured) void models.refresh()
-            if (!model) setOpenPicker(true)
-          }}
-        />
-        {configured && status?.lastOk !== false && (
-          <div className="flex flex-col gap-1.5 border-t border-dashed border-line pt-4">
-            <span className="text-sm font-semibold">Model untuk menyusun cerita</span>
-            <ModelPicker
-              value={model}
-              models={models.models}
-              loading={models.loading}
-              error={models.error}
-              fetchedAt={models.fetchedAt}
-              onChange={async (id) => {
-                setOpenPicker(false)
-                onSettings(await window.api.settings.set({ llmModels: { ...settings.llmModels, [provider]: id } }))
-                toast('success', `Cerita akan disusun oleh ${spec.name} · ${id}`)
+      {configured && status?.lastOk !== false && (
+        <div className="flex flex-col gap-1.5 border-t border-dashed border-line pt-4">
+          <span className="text-sm font-semibold">Model untuk menyusun cerita</span>
+          <ModelPicker
+            value={model}
+            models={models.models}
+            loading={models.loading}
+            error={models.error}
+            fetchedAt={models.fetchedAt}
+            onChange={async (id) => {
+              setOpenPicker(false)
+              onSettings(await window.api.settings.set({ llmModels: { ...settings.llmModels, [provider]: id } }))
+              toast('success', `Cerita akan disusun oleh ${spec.name} · ${id}`)
+            }}
+            onRefresh={() => void models.refresh()}
+            allowCustom={provider === 'custom'}
+            defaultOpen={openPicker}
+            placeholder="Pilih model dari daftar"
+          />
+          {selected?.description && <p className="line-clamp-2 text-[13px] text-muted">{selected.description}</p>}
+          {selected && provider === 'openrouter' && !selected.tags.includes('JSON') && (
+            <p className="text-[13px] text-sun-ink">
+              Model ini tidak mendukung output JSON terstruktur. Aplikasi tetap mencoba, tapi model berlabel JSON biasanya lebih stabil.
+            </p>
+          )}
+        </div>
+      )}
+    </Card>
+  )
+}
+
+/** Picks a CLI that is installed and logged in on this computer; there is no key, so "Simpan dan tes" runs the program once. */
+function CliCard({ settings, statusOf, onChanged, onSettings }: LlmCardProps) {
+  const { toast } = useApp()
+  const status = statusOf('cli')
+  const configured = !!status?.configured
+  const [tool, setTool] = useState<CliTool>(settings.cliTool)
+  const [command, setCommand] = useState(settings.cliCommand)
+  const [model, setModel] = useState(settings.llmModels.cli)
+  const [busy, setBusy] = useState<'save' | 'test' | null>(null)
+  const spec = CLI_TOOLS.find((t) => t.id === tool)!
+  const isCustom = tool === 'custom'
+  const changed = tool !== settings.cliTool || (isCustom && command.trim() !== settings.cliCommand.trim())
+  const canSave = (!isCustom || !!command.trim()) && (changed || !configured)
+
+  const run = async (kind: 'save' | 'test'): Promise<void> => {
+    setBusy(kind)
+    try {
+      const r = kind === 'save' ? await window.api.settings.setCli(tool, command) : await window.api.settings.testKey('cli')
+      toast(r.ok ? 'success' : 'error', `${spec.name}: ${r.message}`)
+      onChanged()
+      if (kind === 'save') onSettings(await window.api.settings.get())
+    } catch (e) {
+      toast('error', errorText(e))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const saveModel = async (): Promise<void> => {
+    const next = model.trim()
+    if (next === settings.llmModels.cli) return
+    onSettings(await window.api.settings.set({ llmModels: { ...settings.llmModels, cli: next } }))
+    toast('success', `Cerita akan disusun oleh ${spec.name} · ${next || 'model bawaan CLI'}`)
+  }
+
+  const clear = async (): Promise<void> => {
+    const ok = await confirmDialog({
+      title: 'Hapus pengaturan CLI?',
+      body: 'Pilihan CLI dan perintahnya dihapus dari aplikasi. CLI di komputermu tidak ikut terhapus.',
+      confirm: 'Hapus',
+      danger: true
+    })
+    if (!ok) return
+    await window.api.settings.clearKey('cli')
+    setCommand('')
+    onChanged()
+    onSettings(await window.api.settings.get())
+  }
+
+  return (
+    <Card>
+      <div className="flex flex-col gap-3">
+        <Field label="CLI yang dipakai">
+          <Segmented
+            value={tool}
+            onChange={setTool}
+            options={CLI_TOOLS.map((t) => ({ id: t.id, label: t.name }))}
+            className="self-start"
+          />
+        </Field>
+        {isCustom && (
+          <Field label="Perintah (prompt masuk lewat stdin, balasan dibaca dari stdout)">
+            <input
+              value={command}
+              onChange={(e) => setCommand(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && canSave && !busy) void run('save')
               }}
-              onRefresh={() => void models.refresh()}
-              allowCustom={provider === 'custom'}
-              defaultOpen={openPicker}
-              placeholder="Pilih model dari daftar"
+              placeholder="mycli --quiet --model {model}"
+              spellCheck={false}
+              className={cx(inputCls, 'h-11 font-mono text-sm')}
             />
-            {selected?.description && <p className="line-clamp-2 text-[13px] text-muted">{selected.description}</p>}
-            {selected && provider === 'openrouter' && !selected.tags.includes('JSON') && (
-              <p className="text-[13px] text-sun-ink">
-                Model ini tidak mendukung output JSON terstruktur. Aplikasi tetap mencoba, tapi model berlabel JSON biasanya lebih stabil.
-              </p>
-            )}
-          </div>
+          </Field>
         )}
-      </Card>
-    </>
+        <div className="flex items-center gap-2">
+          <Button variant="accent" className="h-11" disabled={!canSave} loading={busy === 'save'} onClick={() => void run('save')}>
+            Simpan dan tes
+          </Button>
+          {configured && (
+            <>
+              <Button className="h-11" loading={busy === 'test'} onClick={() => void run('test')}>
+                Tes
+              </Button>
+              <IconButton label="Hapus pengaturan CLI" size={44} className="text-bad-ink" onClick={() => void clear()}>
+                <Trash2 className="size-[18px]" />
+              </IconButton>
+            </>
+          )}
+        </div>
+        <p className={cx('text-[13px]', configured && status?.lastOk === false ? 'text-bad-ink' : 'text-ink-2')}>
+          {configured && status?.lastMessage
+            ? `${status.lastMessage}${status.checkedAt ? ` · dicek ${relativeTime(status.checkedAt)}` : ''}`
+            : `${spec.note} Tes menjalankan CLI sekali dengan prompt pendek, jadi bisa memakai sedikit kuota akunmu.`}
+        </p>
+      </div>
+      <div className="flex flex-col gap-1.5 border-t border-dashed border-line pt-4">
+        <span className="text-sm font-semibold">Model (opsional)</span>
+        <input
+          value={model}
+          onChange={(e) => setModel(e.target.value)}
+          onBlur={() => void saveModel()}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') e.currentTarget.blur()
+          }}
+          placeholder="Kosongkan untuk memakai model bawaan CLI"
+          spellCheck={false}
+          className={cx(inputCls, 'h-11 font-mono text-sm')}
+        />
+        <p className="text-[13px] text-muted">
+          Isi kalau mau model tertentu ({spec.modelHint}). Setiap langkah cerita menjalankan CLI sekali, jadi lebih lambat daripada API langsung.
+        </p>
+      </div>
+    </Card>
   )
 }
 
@@ -506,7 +636,112 @@ function TtsSection({ settings, statusOf, onChanged, onSettings }: { settings: A
   )
 }
 
-function VisualSection({ statusHf, statusFal, onChanged }: { statusHf?: KeyStatus; statusFal?: KeyStatus; onChanged: () => void }) {
+/** Draws images with a CLI on this computer instead of a paid image API; there is no key, so "Simpan dan tes" only checks the CLI. */
+function CliImageCard({ settings, status, onChanged, onSettings }: { settings: AppSettings; status?: KeyStatus; onChanged: () => void; onSettings: (s: AppSettings) => void }) {
+  const { toast } = useApp()
+  const configured = !!status?.configured
+  const [tool, setTool] = useState<CliImageTool>(settings.cliImageTool)
+  const [command, setCommand] = useState(settings.cliImageCommand)
+  const [busy, setBusy] = useState<'save' | 'test' | null>(null)
+  const spec = CLI_IMAGE_TOOLS.find((t) => t.id === tool)!
+  const isCustom = tool === 'custom'
+  const changed = tool !== settings.cliImageTool || (isCustom && command.trim() !== settings.cliImageCommand.trim())
+  const canSave = (!isCustom || !!command.trim()) && (changed || !configured)
+
+  const run = async (kind: 'save' | 'test'): Promise<void> => {
+    setBusy(kind)
+    try {
+      const r = kind === 'save' ? await window.api.settings.setCliImage(tool, command) : await window.api.settings.testKey('cli-image')
+      toast(r.ok ? 'success' : 'error', `${spec.name}: ${r.message}`)
+      onChanged()
+      if (kind === 'save') onSettings(await window.api.settings.get())
+    } catch (e) {
+      toast('error', errorText(e))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const clear = async (): Promise<void> => {
+    const ok = await confirmDialog({
+      title: 'Hapus pengaturan CLI gambar?',
+      body: 'Pilihan CLI dan perintahnya dihapus dari aplikasi. CLI di komputermu tidak ikut terhapus.',
+      confirm: 'Hapus',
+      danger: true
+    })
+    if (!ok) return
+    await window.api.settings.clearKey('cli-image')
+    setCommand('')
+    onChanged()
+    onSettings(await window.api.settings.get())
+  }
+
+  return (
+    <Card>
+      <div className="flex items-center gap-3">
+        <ProviderLogo id="cli" />
+        <div className="flex flex-1 flex-col">
+          <span className="text-base font-bold">CLI di komputer</span>
+          <span className="text-[13px] text-ink-2">Gambar dari Antigravity atau perintah sendiri · tanpa kunci API dan tanpa biaya per gambar</span>
+        </div>
+        <StatusBadge status={status} />
+      </div>
+      <div className="flex flex-col gap-3">
+        <Field label="CLI yang dipakai">
+          <Segmented value={tool} onChange={setTool} options={CLI_IMAGE_TOOLS.map((t) => ({ id: t.id, label: t.name }))} className="self-start" />
+        </Field>
+        {isCustom && (
+          <Field label="Perintah (prompt masuk lewat stdin, gambar ditulis ke {output})">
+            <input
+              value={command}
+              onChange={(e) => setCommand(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && canSave && !busy) void run('save')
+              }}
+              placeholder="mycli draw --aspect {aspect} --out {output}"
+              spellCheck={false}
+              className={cx(inputCls, 'h-11 font-mono text-sm')}
+            />
+          </Field>
+        )}
+        <div className="flex items-center gap-2">
+          <Button variant="accent" className="h-11" disabled={!canSave} loading={busy === 'save'} onClick={() => void run('save')}>
+            Simpan dan tes
+          </Button>
+          {configured && (
+            <>
+              <Button className="h-11" loading={busy === 'test'} onClick={() => void run('test')}>
+                Tes
+              </Button>
+              <IconButton label="Hapus pengaturan CLI gambar" size={44} className="text-bad-ink" onClick={() => void clear()}>
+                <Trash2 className="size-[18px]" />
+              </IconButton>
+            </>
+          )}
+        </div>
+        <p className={cx('text-[13px]', configured && status?.lastOk === false ? 'text-bad-ink' : 'text-ink-2')}>
+          {configured && status?.lastMessage
+            ? `${status.lastMessage}${status.checkedAt ? ` · dicek ${relativeTime(status.checkedAt)}` : ''}`
+            : isCustom
+              ? `${spec.note} {output} sudah diberi tanda kutip. Tes menggambar satu kotak merah, jadi memakai sedikit kuota.`
+              : spec.note}
+        </p>
+      </div>
+      <p className="flex items-start gap-2.5 border-t border-dashed border-line pt-4 text-[13px] leading-relaxed text-ink-2">
+        <ImageIcon className="mt-0.5 size-4 shrink-0" />
+        <span>
+          Pilih model <strong className="text-ink">CLI di komputer</strong> per proyek di langkah <strong className="text-ink">Ide cerita</strong>, bagian Model AI. Claude Code
+          dan Codex tidak ada di sini: Claude Code tidak bisa membuat gambar, dan alat gambar Codex butuh persetujuan yang tidak bisa diberikan dari aplikasi. Aplikasi tidak
+          memakai <code className="rounded bg-sand px-1 font-mono text-xs">--dangerously-skip-permissions</code>.
+        </span>
+      </p>
+    </Card>
+  )
+}
+
+function VisualSection({ settings, statusOf, onChanged, onSettings }: { settings: AppSettings; statusOf: (p: ApiProvider) => KeyStatus | undefined; onChanged: () => void; onSettings: (s: AppSettings) => void }) {
+  const statusHf = statusOf('higgsfield')
+  const statusFal = statusOf('fal')
   return (
     <>
       <SectionTitle icon={<ImageIcon className="size-5" />} title="Gambar dan video" sub="Penyedia untuk membuat gambar klip, lembar karakter, dan video AI." />
@@ -571,6 +806,8 @@ function VisualSection({ statusHf, statusFal, onChanged }: { statusHf?: KeyStatu
           onChanged={onChanged}
         />
       </Card>
+
+      <CliImageCard settings={settings} status={statusOf('cli-image')} onChanged={onChanged} onSettings={onSettings} />
     </>
   )
 }
@@ -644,7 +881,7 @@ export function Settings() {
                 </div>
                 <LlmSection settings={settings} statusOf={statusOf} onChanged={reload} onSettings={setSettings} />
                 <TtsSection settings={settings} statusOf={statusOf} onChanged={reload} onSettings={setSettings} />
-                <VisualSection statusHf={statusOf('higgsfield')} statusFal={statusOf('fal')} onChanged={reload} />
+                <VisualSection settings={settings} statusOf={statusOf} onChanged={reload} onSettings={setSettings} />
                 <WhisperSection settings={settings} onSettings={setSettings} />
               </>
             )}

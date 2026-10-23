@@ -23,6 +23,8 @@ Pengguna memasukkan kuncinya sendiri di **Pengaturan › Layanan AI dan kunci**.
 | `fal` | gambar dan lembar karakter via Fal.ai (FLUX.1 Schnell & Dev) |
 | `elevenlabs` | TTS |
 | `openrouter`, `groq`, `custom` | LLM lewat API kompatibel OpenAI |
+| `cli`, `cli-image` | CLI di komputer: LLM dan gambar (tanpa kunci, lihat bagian CLI di bawah) |
+
 ## LLM (`services/llm.ts`, `services/gemini.ts`)
 
 - `generateJson({ system, prompt, schema, name })` memanggil penyedia aktif (`settings.llmProvider` +
@@ -33,6 +35,47 @@ Pengguna memasukkan kuncinya sendiri di **Pengaturan › Layanan AI dan kunci**.
 - `listModels(source)`: daftar model live dari penyedia, dicache di tabel `cache` dan disegarkan saat basi.
 - **Menambah penyedia LLM baru** yang kompatibel OpenAI: tambahkan ke `LlmProvider` dan `ApiProvider`
   (`types.ts`), `LLM_PROVIDERS` (`shared/models.ts`), konfigurasi base URL di `llm.ts`, dan `DEFAULT_SETTINGS.llmModels`.
+
+## CLI di komputer (`services/cli.ts`)
+
+CLI AI yang sudah terpasang dan login di komputer pengguna bisa dipakai tanpa kunci API, untuk **menulis cerita**
+(`llmProvider: 'cli'`) dan **membuat gambar** (model `cli/image`). Tidak ada kunci yang disimpan; baris `cli` dan
+`cli-image` di tabel `secrets` hanya menyimpan hasil tes terakhir (nilainya kosong, seperti endpoint custom).
+
+| CLI | Teks | Gambar | Cara jalan |
+|---|---|---|---|
+| Claude Code (`claude`) | ya | tidak: tidak punya alat gambar | `claude -p --output-format text --no-session-persistence --tools "" --disable-slash-commands --setting-sources ""`, prompt lewat stdin |
+| Codex CLI (`codex`) | ya | belum | `codex exec --ephemeral --sandbox read-only -o <file> -`, balasan dibaca dari file |
+| Antigravity (`agy`) | ya | ya | `agy --input-format stream-json --output-format stream-json`; prompt satu event `user` di stdin, balasan dari event `result` |
+| Perintah sendiri | ya | ya | string shell dari pengguna; teks: `{model}` diganti model, prompt di stdin, balasan di stdout. Gambar: prompt di stdin, file ditulis ke `{output}` (sudah diberi tanda kutip), `{aspect}` = `16:9`/`9:16` |
+
+- Setiap panggilan berjalan di folder sementara kosong (`bangstory-cli-*`) yang dihapus sesudahnya, supaya CLI tidak
+  membaca berkas proyek dan tidak meninggalkan apa pun. Prompt tidak pernah ditaruh di argumen, jadi batas panjang baris
+  perintah (Windows) tidak berlaku.
+- PATH dibaca dari login shell (macOS/Linux), karena aplikasi yang dibuka dari Finder tidak mewarisi PATH terminal.
+- Pengaturan: `cliTool` + `cliCommand` (teks), `cliImageTool` + `cliImageCommand` (gambar), `llmModels.cli` (model
+  opsional; kosong = model bawaan CLI). Tes teks mengirim "Reply with the single word OK" (memakai sedikit kuota). Tes
+  gambar Antigravity cukup `agy models` (tanpa membuat gambar); tes perintah custom benar-benar menggambar satu kotak.
+- Gambar Antigravity: alat `generate_image` dipanggil lewat subagent, ±1 menit per gambar (terukur 55–75 detik). Aplikasi
+  meminta path hasil di dalam tag `<path>`, lalu memeriksa magic byte PNG/JPEG/WebP sebelum menyimpannya. Rasio 16:9
+  menghasilkan 1376×768, 9:16 menghasilkan 768×1376. Antrean `cli` menjalankan 2 gambar sekaligus. Tanpa lembar karakter
+  (`input.mode: 'none'`).
+
+### Soal `--dangerously-*`
+
+Aplikasi **tidak pernah** memberi `--dangerously-skip-permissions` (Antigravity/Claude) atau
+`--dangerously-bypass-approvals-and-sandbox` (Codex). Teks tidak butuh alat, dan `generate_image` Antigravity jalan
+tanpa izin `command` (terukur). Flag itu membuka izin menjalankan perintah apa saja atas nama pengguna, dan menurut
+issue antigravity-cli #36 membuat `--sandbox` tidak berguna. Kalau `agy` tetap meminta izin (exit 0, respons kosong,
+`denied_actions` terisi), `agyReply` melempar pesan yang menyebut alat yang ditolak.
+
+- **Codex untuk gambar belum didukung.** Di akun yang diuji, `exec` memilih alat MCP Canva (butuh persetujuan, ditolak
+  karena `approval: never`), dan dengan `--ignore-user-config` alat `image_gen` bawaan tidak tersedia. Tanpa bukti
+  jalan, tidak ada kode yang dikirim. Pengguna bisa membungkus Codex sendiri lewat "Perintah sendiri".
+- Perintah custom dijalankan lewat shell dengan hak pengguna. Perintah itu hanya bisa diisi pengguna sendiri di
+  Pengaturan (IPC `settings:setCli`/`setCliImage`), tidak pernah berasal dari AI atau proyek.
+- Menambah CLI baru: tambahkan ke `CliTool` (`types.ts`), `CLI_TOOLS`/`CLI_IMAGE_TOOLS` (`shared/models.ts`), lalu cabang
+  di `ask()`/`makeImage()` (`services/cli.ts`).
 
 ## TTS
 

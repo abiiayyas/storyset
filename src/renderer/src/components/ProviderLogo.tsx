@@ -1,4 +1,4 @@
-import { Server } from 'lucide-react'
+import { Server, Terminal } from 'lucide-react'
 import { cx } from './ui'
 
 /**
@@ -8,7 +8,7 @@ import { cx } from './ui'
 const FILES = import.meta.glob('../assets/providers/*.{svg,png}', { eager: true, import: 'default' }) as Record<string, string>
 const file = (name: string): string => FILES[`../assets/providers/${name}`]
 
-export type ProviderLogoId = 'gemini' | 'openrouter' | 'groq' | 'elevenlabs' | 'higgsfield' | 'custom' | 'fal'
+export type ProviderLogoId = 'gemini' | 'openrouter' | 'groq' | 'elevenlabs' | 'higgsfield' | 'custom' | 'fal' | 'cli'
 
 const LOOK: Record<ProviderLogoId, { bg: string; src?: string; inset: number }> = {
   gemini: { bg: '#FFFFFF', src: 'gemini.svg', inset: 0.2 },
@@ -17,7 +17,8 @@ const LOOK: Record<ProviderLogoId, { bg: string; src?: string; inset: number }> 
   elevenlabs: { bg: '#000000', src: 'elevenlabs.svg', inset: 0.28 },
   higgsfield: { bg: '#D1FE17', src: 'higgsfield.png', inset: 0 },
   fal: { bg: '#18181B', inset: 0.2 },
-  custom: { bg: '#F3EFE8', inset: 0.24 }
+  custom: { bg: '#F3EFE8', inset: 0.24 },
+  cli: { bg: '#18181B', inset: 0.26 }
 }
 
 export function ProviderLogo({ id, size = 40, className }: { id: ProviderLogoId; size?: number; className?: string }) {
@@ -33,6 +34,8 @@ export function ProviderLogo({ id, size = 40, className }: { id: ProviderLogoId;
         <span className="font-mono font-black text-white tracking-tighter" style={{ fontSize: Math.round(size * 0.36) }}>fal</span>
       ) : look.src ? (
         <img src={file(look.src)} alt="" draggable={false} style={{ width: inner, height: inner }} className="object-contain" />
+      ) : id === 'cli' ? (
+        <Terminal style={{ width: inner, height: inner }} strokeWidth={2} className="text-white" />
       ) : (
         <Server style={{ width: inner, height: inner }} strokeWidth={1.8} className="text-ink" />
       )}

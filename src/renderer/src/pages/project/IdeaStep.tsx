@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Bot, Play, Sparkles, Square } from 'lucide-react'
 import { getImageModel } from '@shared/higgsfield'
-import { DURATIONS, LANGUAGES, clipCountFor, llmName } from '@shared/models'
+import { DURATIONS, LANGUAGES, clipCountFor, llmModelLabel, llmName, llmNeedsModel } from '@shared/models'
 import { getStyle } from '@shared/styles'
 import type { KeyStatus, LlmProvider, TtsProvider, VoiceOption } from '@shared/types'
 import { Select } from '../../components/Select'
@@ -309,7 +309,7 @@ export function IdeaStep() {
           <span className="flex items-center gap-1.5 text-[13px] text-muted">
             <Bot className="size-3.5" />
             Disusun oleh {writer ? `${llmName(writer.provider)} · ` : ''}
-            <span className={cx('font-mono', writer && !writer.model && 'text-accent-dark')}>{writer ? writer.model || 'model belum dipilih' : '…'}</span>
+            <span className={cx('font-mono', writer && !writer.model && llmNeedsModel(writer.provider) && 'text-accent-dark')}>{writer ? llmModelLabel(writer.provider, writer.model) : '…'}</span>
             <button type="button" onClick={() => void openSettings()} className="font-semibold text-accent-dark hover:underline">
               Ganti
             </button>

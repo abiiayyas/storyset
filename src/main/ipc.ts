@@ -4,6 +4,8 @@ import { basename, dirname, extname, join } from 'node:path'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
 import type {
   ApiProvider,
+  CliImageTool,
+  CliTool,
   AppSettings,
   AspectRatio,
   ExportOptions,
@@ -15,6 +17,7 @@ import type {
   VoiceOption,
   WordTiming
 } from '@shared/types'
+import { CLI_IMAGE_TOOLS, CLI_TOOLS } from '@shared/models'
 import { startExport } from './exporter'
 import {
   estimateCredits,
@@ -55,6 +58,7 @@ import {
 import { clearSecret, keyStatuses, recordCheck, revealSecret, setSecret } from './secrets'
 import { dropCache, getSettings, setSettings } from './settings'
 import { probeDurationMs, probeSize } from './services/audio'
+import * as cli from './services/cli'
 import * as eleven from './services/elevenlabs'
 import * as fal from './services/fal'
 import * as gemini from './services/gemini'
@@ -81,6 +85,14 @@ async function testProvider(provider: ApiProvider, key?: string): Promise<KeyTes
   if (provider === 'higgsfield') return hf.testCredentials(key)
   if (provider === 'elevenlabs') return eleven.testKey(key)
   if (provider === 'fal') return fal.testKey(key)
+  if (provider === 'cli') {
+    const s = getSettings()
+    return cli.testCli(s.cliTool, s.cliCommand, s.llmModels.cli.trim())
+  }
+  if (provider === 'cli-image') {
+    const s = getSettings()
+    return cli.testCliImage(s.cliImageTool, s.cliImageCommand)
+  }
   return llm.testLlm(provider, key)
 }
 
@@ -293,6 +305,26 @@ export function registerIpc(): void {
     dropCache(`models:${provider}`)
     if (provider === 'higgsfield') forgetEstimates()
     if (provider === 'custom') setSettings({ customBaseUrl: '' })
+    if (provider === 'cli') setSettings({ cliCommand: '' })
+    if (provider === 'cli-image') setSettings({ cliImageCommand: '' })
+  })
+  handle('settings:setCliImage', async (tool: CliImageTool, command: string) => {
+    if (!CLI_IMAGE_TOOLS.some((t) => t.id === tool)) throw new Error('CLI gambar tidak dikenal')
+    const cmd = command.trim()
+    if (tool === 'custom' && !cmd) throw new Error('Perintah gambar masih kosong')
+    setSettings({ cliImageTool: tool, cliImageCommand: tool === 'custom' ? cmd : '' })
+    const result = await testProvider('cli-image')
+    recordCheck('cli-image', result.ok, result.message)
+    return result
+  })
+  handle('settings:setCli', async (tool: CliTool, command: string) => {
+    if (!CLI_TOOLS.some((t) => t.id === tool)) throw new Error('CLI tidak dikenal')
+    const cmd = command.trim()
+    if (tool === 'custom' && !cmd) throw new Error('Perintah CLI masih kosong')
+    setSettings({ cliTool: tool, cliCommand: tool === 'custom' ? cmd : '' })
+    const result = await testProvider('cli')
+    recordCheck('cli', result.ok, result.message)
+    return result
   })
   handle('models:list', (source: ModelSource, refresh?: boolean) => llm.listModels(source, !!refresh))
   handle('settings:testKey', async (provider: ApiProvider) => {

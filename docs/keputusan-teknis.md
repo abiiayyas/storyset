@@ -102,3 +102,20 @@ rasio) berbeda dengan yang tercatat di `meta` aset; naikkan `GRAPHIC_VERSION` ka
 - **Lisensi:** Remotion gratis untuk individu dan tim sampai 3 orang (termasuk komersial). Membagikan aplikasi ini
   ke perusahaan 4 orang ke atas bisa memerlukan lisensi perusahaan; syaratnya belum jelas untuk aplikasi desktop,
   tanyakan ke hi@remotion.dev sebelum distribusi luas.
+
+### Gambar dan video tidak terkunci ke Higgsfield
+Gejala awal: gambar dan video "selalu ke Higgsfield" walau Fal.ai, Gemini, dan CLI sudah terhubung. Penyebabnya bukan
+percabangan yang salah, tapi model bawaan proyek baru adalah model Higgsfield, dan video memang hanya punya jalur
+Higgsfield. Keputusannya:
+- Jalur ditentukan satu tempat, `providerOfModel` (awalan id model). Jangan membuat penentuan penyedia baru di renderer
+  atau di `generation.ts`.
+- Model bawaan proyek baru dipilih dari penyedia yang kuncinya valid (`modelsForNewProject`), bukan konstanta. Model
+  yang pernah dipilih pengguna (`settings.imageModel`/`videoModel`) selalu menang. `DEFAULT_IMAGE_MODEL` dan
+  `DEFAULT_VIDEO_MODEL` tinggal jadi cadangan terakhir saat tidak ada penyedia siap, dan untuk id model yang tidak dikenal.
+- Model yang dimatikan pembuatnya dipetakan lewat `RENAMED_MODELS`. Tanpa itu, `getImageModel` jatuh ke model Higgsfield
+  bawaan, yang menyamar sebagai "selalu ke Higgsfield" (kasus nyata: `gemini/imagen-3.0-generate-002`).
+- Harga penyedia selain Higgsfield adalah harga daftar di katalog (`usd`), diverifikasi dari dokumentasi pada Okt 2026.
+  Hanya Higgsfield punya endpoint estimasi.
+- Gambar awal video Fal dikirim sebagai data URI, bukan diunggah ke Higgsfield, supaya video Fal tidak butuh kunci
+  Higgsfield. Video Fal tidak bisa dilanjutkan setelah aplikasi ditutup (tidak ada `remote_id` yang disimpan); job-nya
+  ditandai gagal dan bisa diulang.

@@ -52,6 +52,8 @@ $env:STUDIO_USER_DATA = "C:\temp\bangstory-dev"; npm run dev
 | `STUDIO_CAPTURE_PLAN` | path file JSON rencana dev harness (lihat di bawah) |
 | `STUDIO_LOG` | file untuk menampung `console` renderer dan error harness |
 | `STUDIO_HF_BASE` | base URL Higgsfield tiruan (mock) supaya UI bisa diuji tanpa kredit |
+| `STUDIO_FAL_BASE` | base URL Fal.ai tiruan (antrean `queue.fal.run`) untuk menguji gambar dan video tanpa saldo |
+| `STUDIO_CF_BASE` | base URL Cloudflare tiruan (`.../client/v4`) untuk menguji gambar tanpa jatah neuron |
 | `STUDIO_WHISPER_URL` | URL model Whisper alternatif (misalnya server lokal) untuk menguji unduhan |
 
 ## Dev harness (pengujian otomatis)

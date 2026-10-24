@@ -299,6 +299,7 @@ export function ModelPicker({
                   <span className="flex shrink-0 flex-col items-end gap-0.5 text-[11.5px] text-ink-2">
                     {ctxLabel(m.contextLength) && <span className="font-mono">{ctxLabel(m.contextLength)} konteks</span>}
                     {price && <span className={cx('font-mono', price === 'Gratis' && 'font-semibold text-ok-ink')}>{price}</span>}
+                    {m.priceNote && <span className={cx('font-mono', m.priceNote === 'Gratis' && 'font-semibold text-ok-ink')}>{m.priceNote}</span>}
                     {m.creditUnit !== undefined &&
                       (m.credits === undefined ? (
                         <Spinner className="mt-1 size-3.5 text-muted" />

@@ -96,7 +96,7 @@ export function Home() {
       return !!k?.configured && k.lastOk !== false
     }
     const issues: { what: string; blocks: string }[] = []
-    if (!ok('higgsfield') && !ok('fal') && !ok('gemini') && !ok('cli-image')) issues.push({ what: 'kunci Higgsfield, Fal.ai, Gemini, atau CLI gambar', blocks: 'gambar' })
+    if (!ok('higgsfield') && !ok('fal') && !ok('cloudflare') && !ok('gemini') && !ok('cli-image')) issues.push({ what: 'kunci Cloudflare, Fal.ai, Gemini, Higgsfield, atau CLI gambar', blocks: 'gambar' })
     const llm = appSettings.llmProvider
     if (!ok(llm)) issues.push({ what: llm === 'cli' ? 'CLI AI yang sudah dites' : `kunci ${llmName(llm)}`, blocks: 'cerita' })
     else if (llmNeedsModel(llm) && !appSettings.llmModels[llm]) issues.push({ what: `model ${llmName(llm)}`, blocks: 'cerita' })

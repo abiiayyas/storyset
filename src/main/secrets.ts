@@ -3,7 +3,7 @@ import type { ApiProvider, KeyStatus } from '@shared/types'
 import { getDb } from './db'
 import { getSettings } from './settings'
 
-const PROVIDERS: ApiProvider[] = ['higgsfield', 'gemini', 'elevenlabs', 'openrouter', 'groq', 'custom', 'fal', 'cli', 'cli-image']
+const PROVIDERS: ApiProvider[] = ['higgsfield', 'gemini', 'elevenlabs', 'openrouter', 'groq', 'custom', 'fal', 'cloudflare', 'cli', 'cli-image']
 
 export const PROVIDER_NAMES: Record<ApiProvider, string> = {
   higgsfield: 'Higgsfield',
@@ -13,6 +13,7 @@ export const PROVIDER_NAMES: Record<ApiProvider, string> = {
   groq: 'Groq',
   custom: 'endpoint custom',
   fal: 'Fal.ai',
+  cloudflare: 'Cloudflare Workers AI',
   cli: 'CLI AI',
   'cli-image': 'CLI gambar'
 }

@@ -1,14 +1,27 @@
 import { randomUUID } from 'node:crypto'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { estimateWordTimings } from '@shared/captions'
 import { stripVoiceTags } from '@shared/speech'
-import { DEFAULT_IMAGE_MODEL, getImageModel, getVideoModel, imageBody, maxRefs, promptLimit, videoBody, type HfModel } from '@shared/higgsfield'
+import {
+  PROVIDER_LABEL,
+  fitDuration,
+  getImageModel,
+  getVideoModel,
+  imageBody,
+  listPriceUsd,
+  maxRefs,
+  promptLimit,
+  providerOfModel,
+  videoBody,
+  type HfModel,
+  type ModelProvider
+} from '@shared/higgsfield'
 import { getStyle } from '@shared/styles'
 import type { AspectRatio, Asset, Character, Clip, CreditEstimate, Job, Project, WordTiming } from '@shared/types'
 import { getDb } from './db'
 import { emit } from './events'
-import { runJob, type TaskCtx } from './jobs'
+import { runJob, type QueueName, type TaskCtx } from './jobs'
 import { assetAbsPath } from './paths'
 import {
   activeJobFor,
@@ -32,6 +45,7 @@ import { dropCache, getSettings, readCache, writeCache } from './settings'
 import { probeDurationMs, probeSize } from './services/audio'
 import * as eleven from './services/elevenlabs'
 import * as cli from './services/cli'
+import * as cloudflare from './services/cloudflare'
 import * as fal from './services/fal'
 import * as gemini from './services/gemini'
 import * as hf from './services/higgsfield'
@@ -237,14 +251,6 @@ function updateJobPayload(jobId: string, payload: HfPayload): void {
   getDb().prepare('UPDATE jobs SET payload_json = ? WHERE id = ?').run(JSON.stringify(payload), jobId)
 }
 
-export function imageProviderOf(modelId: string | null | undefined): 'gemini' | 'fal' | 'cli' | 'higgsfield' {
-  if (!modelId) return 'higgsfield'
-  if (modelId.startsWith('gemini/') || modelId.startsWith('google/') || modelId === 'imagen-3.0-generate-002') return 'gemini'
-  if (modelId.startsWith('fal-ai/') || modelId.startsWith('fal/')) return 'fal'
-  if (modelId.startsWith('cli/')) return 'cli'
-  return 'higgsfield'
-}
-
 async function finishDirectImage(
   job: Job,
   target: 'clip-image' | 'sheet',
@@ -286,62 +292,99 @@ async function finishDirectImage(
 
 // ---------- public entry points ----------
 
+/** Providers that answer in one request instead of Higgsfield's submit-and-poll, and the queue each one runs in. */
+const DIRECT_QUEUE: Record<Exclude<ModelProvider, 'higgsfield'>, QueueName> = { gemini: 'gemini', fal: 'fal', cloudflare: 'cloudflare', cli: 'cli' }
+
+async function drawDirect(model: HfModel, prompt: string, aspect: AspectRatio, ctx: TaskCtx): Promise<{ bytes: Buffer; contentType: string }> {
+  switch (providerOfModel(model.id)) {
+    case 'gemini':
+      return gemini.generateImage(prompt, aspect, model.id.replace(/^gemini\//, ''), ctx.signal)
+    case 'cloudflare':
+      return cloudflare.generateImage(model.id, prompt, aspect, ctx.signal)
+    case 'fal':
+      return fal.generateImage(model.id, prompt, aspect, ctx.signal, (msg) => ctx.progress(0.5, msg))
+    case 'cli':
+      return cli.generateImage(prompt, aspect, ctx.signal)
+    default:
+      throw new Error(`${model.name} dibuat lewat Higgsfield, bukan lewat jalur langsung`)
+  }
+}
+
+function startDirectImage(job: Job, model: HfModel, target: 'clip-image' | 'sheet', aspect: AspectRatio, buildPrompt: () => string): Job {
+  const provider = providerOfModel(model.id) as Exclude<ModelProvider, 'higgsfield'>
+  emit.job(job)
+  return runJob(job, DIRECT_QUEUE[provider], async (ctx) => {
+    ctx.progress(0.1, 'Menyiapkan prompt')
+    const prompt = buildPrompt()
+    ctx.progress(0.3, `Membuat ${target === 'sheet' ? 'lembar karakter' : 'gambar'} dengan ${PROVIDER_LABEL[provider]}`)
+    const { bytes, contentType } = await drawDirect(model, prompt, aspect, ctx)
+    ctx.progress(0.9, 'Menyimpan hasil')
+    return finishDirectImage(job, target, model.id, prompt, bytes, contentType)
+  })
+}
+
+/** Stores a finished clip video that came straight from a provider (no remote id to resume from). */
+async function finishDirectVideo(job: Job, model: string, prompt: string, bytes: Buffer, contentType: string): Promise<string> {
+  const rel = saveFile(job.projectId, 'videos', extFromType(contentType, '', '.mp4'), bytes)
+  const abs = assetAbsPath(job.projectId, rel)
+  const size = await probeSize(abs)
+  const durationMs = await probeDurationMs(abs).catch(() => null)
+  const asset = insertAsset({
+    projectId: job.projectId,
+    clipId: job.clipId,
+    kind: 'video',
+    provider: job.provider,
+    model,
+    prompt,
+    localPath: rel,
+    durationMs,
+    width: size?.width ?? null,
+    height: size?.height ?? null
+  })
+  emit.asset(asset)
+  if (job.clipId) {
+    const patch = { videoAssetId: asset.id, motionType: 'video' as const, mediaInMs: 0 }
+    patchClip(job.clipId, patch)
+    emit.clip({ clipId: job.clipId, patch })
+  }
+  touchProject(job.projectId)
+  return asset.id
+}
+
+/** The clip image as a data URI: Fal reads it directly, so providers that cannot fetch our files still get the frame. */
+function imageDataUri(asset: Asset): string {
+  const abs = assetAbsPath(asset.projectId, asset.localPath)
+  const mime = /\.png$/i.test(abs) ? 'image/png' : /\.webp$/i.test(abs) ? 'image/webp' : 'image/jpeg'
+  return `data:${mime};base64,${readFileSync(abs).toString('base64')}`
+}
+
+/** What the video model is told to do with the frame: the clip's own motion prompt, or a gentle default drawn from the scene. */
+function clipVideoPrompt(clip: Clip, model: HfModel): string {
+  const prompt =
+    clip.videoPrompt.trim() ||
+    `${splitAvoid(clip.visualPrompt).scene.replace(/\.$/, '')}. Subtle natural motion of the characters and environment, the camera slowly pushes in. Keep the art style of the first frame.`
+  return model.input.mode === 'reference' ? `Open on the exact scene of the reference image and keep its art style, characters and composition. ${prompt}` : prompt
+}
+
 export function generateClipImage(clipId: string): Job {
   const existing = activeJobFor({ clipId }, 'image')
   if (existing) return existing
   const clip = getClip(clipId)
   const project = getProject(clip.projectId)
-  const modelId = project.imageModel ?? DEFAULT_IMAGE_MODEL
-  const provider = imageProviderOf(modelId)
-
+  const model = getImageModel(project.imageModel)
+  const provider = providerOfModel(model.id)
   const job = insertJob({ projectId: clip.projectId, clipId, kind: 'image', provider })
-  emit.job(job)
 
-  if (provider === 'gemini') {
-    return runJob(job, 'gemini', async (ctx) => {
-      ctx.progress(0.1, 'Menyiapkan prompt')
+  if (provider !== 'higgsfield') {
+    return startDirectImage(job, model, 'clip-image', project.aspectRatio, () => {
       const fresh = getClip(clipId)
       const chars = charactersOf(project.id).filter((c) => fresh.characterIds.includes(c.id))
-      const prompt = clipPrompt(project, fresh, chars, [], 4000)
-      ctx.progress(0.3, 'Membuat gambar dengan Google Imagen 3')
-      const geminiModel = modelId.replace(/^gemini\//, '')
-      const { bytes, contentType } = await gemini.generateImage(prompt, project.aspectRatio, geminiModel, ctx.signal)
-      ctx.progress(0.9, 'Menyimpan gambar')
-      return finishDirectImage(job, 'clip-image', modelId, prompt, bytes, contentType)
-    })
-  }
-
-  if (provider === 'cli') {
-    return runJob(job, 'cli', async (ctx) => {
-      ctx.progress(0.1, 'Menyiapkan prompt')
-      const fresh = getClip(clipId)
-      const chars = charactersOf(project.id).filter((c) => fresh.characterIds.includes(c.id))
-      const prompt = clipPrompt(project, fresh, chars, [], 4000)
-      ctx.progress(0.3, 'Membuat gambar lewat CLI (sekitar 1 menit)')
-      const { bytes, contentType } = await cli.generateImage(prompt, project.aspectRatio, ctx.signal)
-      ctx.progress(0.9, 'Menyimpan gambar')
-      return finishDirectImage(job, 'clip-image', modelId, prompt, bytes, contentType)
-    })
-  }
-
-  if (provider === 'fal') {
-    return runJob(job, 'fal', async (ctx) => {
-      ctx.progress(0.1, 'Menyiapkan prompt')
-      const fresh = getClip(clipId)
-      const chars = charactersOf(project.id).filter((c) => fresh.characterIds.includes(c.id))
-      const prompt = clipPrompt(project, fresh, chars, [], 4000)
-      ctx.progress(0.3, 'Membuat gambar dengan Fal.ai')
-      const { bytes, contentType } = await fal.generateImage(modelId, prompt, project.aspectRatio, ctx.signal, (msg) => {
-        ctx.progress(0.5, msg)
-      })
-      ctx.progress(0.9, 'Menyimpan gambar')
-      return finishDirectImage(job, 'clip-image', modelId, prompt, bytes, contentType)
+      return clipPrompt(project, fresh, chars, [], promptLimit(model))
     })
   }
 
   return startHiggsfield(job, async (ctx) => {
     const fresh = getClip(clipId)
-    const model = getImageModel(project.imageModel)
     const chars = charactersOf(project.id).filter((c) => fresh.characterIds.includes(c.id))
     const refs = await referenceUrls(model, chars, ctx.signal)
     const prompt = clipPrompt(project, fresh, chars, refs.names, promptLimit(model))
@@ -358,50 +401,15 @@ export function generateCharacterSheet(characterId: string): Job {
   if (existing) return existing
   const c = getCharacter(characterId)
   const project = getProject(c.projectId)
-  const modelId = project.imageModel ?? DEFAULT_IMAGE_MODEL
-  const provider = imageProviderOf(modelId)
-
+  const model = getImageModel(project.imageModel)
+  const provider = providerOfModel(model.id)
   const job = insertJob({ projectId: c.projectId, characterId, kind: 'sheet', provider })
-  emit.job(job)
 
-  if (provider === 'gemini') {
-    return runJob(job, 'gemini', async (ctx) => {
-      ctx.progress(0.1, 'Menyiapkan prompt')
-      const prompt = sheetPrompt(project, getCharacter(characterId))
-      ctx.progress(0.3, 'Membuat lembar karakter dengan Google Imagen 3')
-      const geminiModel = modelId.replace(/^gemini\//, '')
-      const { bytes, contentType } = await gemini.generateImage(prompt, '16:9', geminiModel, ctx.signal)
-      ctx.progress(0.9, 'Menyimpan lembar karakter')
-      return finishDirectImage(job, 'sheet', modelId, prompt, bytes, contentType)
-    })
-  }
-
-  if (provider === 'cli') {
-    return runJob(job, 'cli', async (ctx) => {
-      ctx.progress(0.1, 'Menyiapkan prompt')
-      const prompt = sheetPrompt(project, getCharacter(characterId))
-      ctx.progress(0.3, 'Membuat lembar karakter lewat CLI (sekitar 1 menit)')
-      const { bytes, contentType } = await cli.generateImage(prompt, '16:9', ctx.signal)
-      ctx.progress(0.9, 'Menyimpan lembar karakter')
-      return finishDirectImage(job, 'sheet', modelId, prompt, bytes, contentType)
-    })
-  }
-
-  if (provider === 'fal') {
-    return runJob(job, 'fal', async (ctx) => {
-      ctx.progress(0.1, 'Menyiapkan prompt')
-      const prompt = sheetPrompt(project, getCharacter(characterId))
-      ctx.progress(0.3, 'Membuat lembar karakter dengan Fal.ai')
-      const { bytes, contentType } = await fal.generateImage(modelId, prompt, '16:9', ctx.signal, (msg) => {
-        ctx.progress(0.5, msg)
-      })
-      ctx.progress(0.9, 'Menyimpan lembar karakter')
-      return finishDirectImage(job, 'sheet', modelId, prompt, bytes, contentType)
-    })
+  if (provider !== 'higgsfield') {
+    return startDirectImage(job, model, 'sheet', '16:9', () => sheetPrompt(project, getCharacter(characterId)))
   }
 
   return startHiggsfield(job, async () => {
-    const model = getImageModel(project.imageModel)
     const prompt = sheetPrompt(project, getCharacter(characterId))
     return {
       endpoint: model.id,
@@ -417,20 +425,37 @@ export function generateClipVideo(clipId: string): Job {
   if (existing) return existing
   const clip = getClip(clipId)
   if (!clip.imageAssetId) throw new Error('Buat gambar klip ini dulu sebelum membuat video AI.')
-  const job = insertJob({ projectId: clip.projectId, clipId, kind: 'video', provider: 'higgsfield' })
+  const project = getProject(clip.projectId)
+  const model = getVideoModel(project.videoModel)
+  const provider = providerOfModel(model.id)
+  const job = insertJob({ projectId: clip.projectId, clipId, kind: 'video', provider })
+
+  if (provider === 'fal') {
+    emit.job(job)
+    return runJob(job, 'falvideo', async (ctx) => {
+      const fresh = getClip(clipId)
+      const image = getAsset(fresh.imageAssetId)
+      if (!image) throw new Error('Gambar klip tidak ditemukan')
+      ctx.progress(0.05, 'Menyiapkan gambar awal')
+      const prompt = clipVideoPrompt(fresh, model)
+      const body = videoBody(model, prompt, imageDataUri(image), fresh.durationMs / 1000, project.aspectRatio, project.videoResolution)
+      const started = Date.now()
+      const { bytes, contentType } = await fal.generateVideo(model.id, body, ctx.signal, (msg) => {
+        // No percentage from Fal: ease towards 90% so the bar keeps moving during the minutes a video takes.
+        ctx.progress(0.1 + 0.8 * (1 - Math.exp(-(Date.now() - started) / 90_000)), msg)
+      })
+      ctx.progress(0.93, 'Menyimpan video')
+      return finishDirectVideo(job, model.id, prompt, bytes, contentType)
+    })
+  }
+
   return startHiggsfield(job, async (ctx) => {
     const fresh = getClip(clipId)
     const image = getAsset(fresh.imageAssetId)
     if (!image) throw new Error('Gambar klip tidak ditemukan')
-    const project = getProject(fresh.projectId)
-    const model = getVideoModel(project.videoModel)
     ctx.progress(0.05, 'Menyiapkan gambar awal')
     const url = await publicUrlFor(image, ctx.signal)
-    let prompt =
-      fresh.videoPrompt.trim() ||
-      `${splitAvoid(fresh.visualPrompt).scene.replace(/\.$/, '')}. Subtle natural motion of the characters and environment, the camera slowly pushes in. Keep the art style of the first frame.`
-    if (model.input.mode === 'reference')
-      prompt = `Open on the exact scene of the reference image and keep its art style, characters and composition. ${prompt}`
+    const prompt = clipVideoPrompt(fresh, model)
     return {
       endpoint: model.id,
       body: videoBody(model, prompt, url, fresh.durationMs / 1000, project.aspectRatio, project.videoResolution),
@@ -566,13 +591,11 @@ export async function estimateCredits(
   resolution?: string | null,
   quality?: string | null
 ): Promise<CreditEstimate | null> {
-  if (kind === 'image') {
-    const prov = imageProviderOf(modelId)
-    if (prov === 'gemini') return { credits: 0, usd: 0.03 }
-    if (prov === 'fal') return { credits: 0, usd: modelId.includes('schnell') ? 0.003 : 0.025 }
-    if (prov === 'cli') return { credits: 0, usd: 0 }
-  }
   const model = kind === 'image' ? getImageModel(modelId) : getVideoModel(modelId)
+  if (providerOfModel(model.id) !== 'higgsfield') {
+    // The other providers publish list prices, so there is nothing to ask them. They have no credits, hence 0.
+    return { credits: 0, usd: listPriceUsd(model, fitDuration(model, seconds) ?? seconds, resolution) }
+  }
   const body =
     kind === 'image'
       ? imageBody(model, 'estimate', aspect, [], { resolution, quality })

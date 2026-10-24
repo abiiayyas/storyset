@@ -13,6 +13,8 @@ const FAMILY_LOGO: Record<string, { src?: string; bg: string; inset: number }> =
   Google: { src: 'providers/gemini.svg', bg: '#FFFFFF', inset: 0.18 },
   Flux: { bg: '#18181B', inset: 0.2 },
   Fal: { bg: '#18181B', inset: 0.2 },
+  Cloudflare: { bg: '#F6821F', inset: 0.2 },
+  Veo: { src: 'providers/gemini.svg', bg: '#FFFFFF', inset: 0.18 },
   CLI: { bg: '#18181B', inset: 0.2 },
   Soul: { src: 'providers/higgsfield.png', bg: '#D1FE17', inset: 0 },
   'Cinema Studio': { src: 'providers/higgsfield.png', bg: '#D1FE17', inset: 0 },
@@ -47,6 +49,8 @@ export function ModelLogo({ family, size = 30, className }: { family?: string; s
         <span className="font-mono font-black text-white text-[11px]">&gt;_</span>
       ) : family === 'Flux' || family === 'Fal' ? (
         <span className="font-mono font-black text-white text-[11px]">fal</span>
+      ) : family === 'Cloudflare' ? (
+        <span className="font-sans font-black text-white text-[11px]">CF</span>
       ) : (
         (family ?? '?').slice(0, 1)
       )}

@@ -14,13 +14,14 @@ Pengguna memasukkan kuncinya sendiri di **Pengaturan › Layanan AI dan kunci**.
 - `requireSecret(provider)` melempar error berbahasa Indonesia kalau kunci belum ada.
 - `revealSecret` hanya dipanggil tombol "tampilkan kunci" di Pengaturan.
 - **Jangan pernah** menulis kunci ke log, pesan error, file, URL, atau mengirimnya ke layanan lain.
-- Mengganti kunci Higgsfield menghapus cache estimasi kredit (`forgetEstimates`).
+- Mengganti kunci Higgsfield menghapus cache estimasi kredit (`forgetEstimates`). Menghapus kunci Cloudflare ikut mengosongkan Account ID.
 
 | Penyedia (`ApiProvider`) | Dipakai untuk |
 |---|---|
-| `higgsfield` | gambar, lembar karakter, video |
-| `gemini` | LLM (naskah/visual), Gemini TTS, dan Google Imagen 3 |
-| `fal` | gambar dan lembar karakter via Fal.ai (FLUX.1 Schnell & Dev) |
+| `higgsfield` | gambar, lembar karakter, video (opsional, tidak wajib) |
+| `gemini` | LLM (naskah/visual), Gemini TTS, dan gambar Nano Banana |
+| `fal` | gambar (FLUX) dan video AI (Wan 2.2, LTX 2.3, Hailuo 02, Veo 3.1 Lite) lewat satu kunci |
+| `cloudflare` | gambar lewat Cloudflare Workers AI (token terenkripsi; Account ID disimpan di pengaturan `cloudflareAccountId`) |
 | `elevenlabs` | TTS |
 | `openrouter`, `groq`, `custom` | LLM lewat API kompatibel OpenAI |
 | `cli`, `cli-image` | CLI di komputer: LLM dan gambar (tanpa kunci, lihat bagian CLI di bawah) |
@@ -127,11 +128,37 @@ di API Higgsfield (hanya di aplikasi webnya). Satu entri:
 - Model bawaan: `DEFAULT_IMAGE_MODEL` dan `DEFAULT_VIDEO_MODEL` di `shared/higgsfield.ts`.
 
 
-## Fal.ai dan Google Imagen 3 (`services/fal.ts`, `services/gemini.ts`)
+## Penyedia gambar dan video selain Higgsfield
 
-- **Google Imagen 3**: Menggunakan SDK `@google/genai` yang sama dengan LLM dan Gemini TTS. Model `gemini/imagen-3.0-generate-002` (~$0.03/gambar).
-- **Fal.ai**: Base URL `https://queue.fal.run`, header `Authorization: Key <kunci>`. Model `fal-ai/flux/schnell` (~$0.003/gambar) dan `fal-ai/flux/dev` (~$0.025/gambar).
-- **Import Gambar Lokal**: Pengguna juga bisa mengimpor gambar PNG/JPG/WebP sendiri langsung ke klip atau lembar karakter via dialog file tanpa memakai API sama sekali.
+Model apa pun dikenali dari awalan id-nya (`providerOfModel` di `shared/higgsfield.ts`): `gemini/…`, `fal-ai/…`, `@cf/…`, `cli/…`;
+id tanpa awalan milik Higgsfield. Setiap proyek menyimpan model gambar dan videonya sendiri, dan tidak ada penyedia yang wajib.
+Proyek baru memakai model terakhir yang dipilih; kalau belum pernah memilih, `modelsForNewProject` (`main/defaults.ts`) memilih
+model dari penyedia termurah yang kuncinya valid (Cloudflare, Fal.ai, Gemini, CLI, lalu Higgsfield untuk gambar; Fal.ai lalu
+Higgsfield untuk video).
+
+| Penyedia | File | Model | Cara kerja |
+|---|---|---|---|
+| Cloudflare Workers AI | `services/cloudflare.ts` | SDXL Lightning, FLUX.1 schnell, Lucid Origin | `POST /accounts/{id}/ai/run/{model}` dengan `Authorization: Bearer`. Jawaban bisa JSON `{result:{image}}` (base64) atau gambar mentah. Hanya SDXL Lightning dan Lucid Origin menerima `width`/`height` (1344×768 atau 768×1344); FLUX schnell tidak punya parameter ukuran, jadi hasilnya persegi. Tes kunci: `GET /accounts/{id}/ai/models/search`. Jatah gratis 10.000 neuron per hari; kalau habis, pesan error menyebutnya. |
+| Fal.ai | `services/fal.ts` | FLUX schnell/dev (gambar); Wan 2.2 A14B, LTX 2.3 Fast, Hailuo 02 Standard, Veo 3.1 Lite (video) | Antrean `queue.fal.run`: kirim, polling `status_url`, ambil `response_url`. URL status dan hasil diambil dari jawaban Fal sendiri karena endpoint bersarang (`fal-ai/wan/...`) diantrekan di app id-nya. Gambar awal video dikirim sebagai data URI. |
+| Google Gemini | `services/gemini.ts` | Nano Banana 2 Lite, Nano Banana 2.1 | `POST /v1beta/interactions` dengan `response_format: {type:'image', aspect_ratio, image_size:'1K'}`; gambar dibaca dari langkah `model_output`. |
+| CLI | `services/cli.ts` | `cli/image` | Lihat bagian CLI di atas. |
+
+- **Katalog dan harga** ada di `shared/higgsfield.ts` (`CLOUDFLARE_IMAGE_MODELS`, `FAL_IMAGE_MODELS`, `GEMINI_IMAGE_MODELS`,
+  `CLI_IMAGE_MODELS`, `FAL_VIDEO_MODELS`). Harga di sana adalah harga daftar (USD per gambar, atau per detik video menurut
+  resolusi), bukan hasil panggilan API; `estimateCredits` mengembalikan `{ credits: 0, usd }` untuk semua penyedia selain
+  Higgsfield. Cek ulang harga di situs penyedia sebelum mengisi saldo.
+- **Bentuk permintaan video** berbeda per endpoint, dan semuanya diatur lewat entri katalog, bukan percabangan di kode:
+  `durationAs: 'text'` (Hailuo: `"6"`), `'suffix'` (Veo: `"6s"`), `'frames'` (Wan: `num_frames` 17–161 pada 16 fps), `fixed`
+  (field tetap, mis. `prompt_optimizer: false`), `defaultResolution`. Suara bawaan model dimatikan (`generate_audio: false`)
+  karena narasi dan musik berasal dari editor.
+- **Menambah model Fal baru**: salin skema input dari `https://fal.ai/models/<endpoint-id>/llms.txt`, tambahkan `falVideo({...})`
+  atau `textToImage(...)`, lalu cek `videoBody` menghasilkan field yang sama dengan contoh di dokumentasinya.
+- **Veo lewat Gemini API tidak dipakai**: Google mematikan `veo-3.1-*-preview` pada 22 Okt 2026 dan menggantinya dengan
+  Gemini Omni Flash (API Interactions), yang belum dipasang. Veo dipakai lewat Fal.ai.
+- **Imagen 3 sudah dimatikan Google** (Nov 2025). Proyek lama yang menyimpan `gemini/imagen-3.0-generate-002` otomatis
+  dipetakan ke Nano Banana 2 Lite (`RENAMED_MODELS`).
+- **Import gambar lokal**: pengguna juga bisa mengimpor gambar PNG/JPG/WebP sendiri ke klip atau lembar karakter tanpa API.
+
 ## Whisper lokal (`src/main/whisper.ts`)
 
 - Biner: `resources/whisper/whisper-cli.exe` + DLL (whisper.cpp, lisensi MIT). Saat ini hanya untuk Windows.

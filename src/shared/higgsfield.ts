@@ -1,5 +1,5 @@
 import catalog from './higgsfield-catalog.json'
-import type { AspectRatio, ModelOption } from './types'
+import type { ApiProvider, AspectRatio, ModelOption } from './types'
 
 /**
  * Every Higgsfield endpoint that can draw a clip image or animate one, generated from docs.higgsfield.ai
@@ -28,6 +28,16 @@ export interface HfModel {
   props: Record<string, FieldSchema>
   durations: { values: number[] } | { min: number; max: number } | null
   tags: string[]
+  /** Sentence shown under the name in the picker; replaces the generated summary. */
+  note?: string
+  /** Constant fields sent with every request (endpoints outside Higgsfield). */
+  fixed?: Record<string, unknown>
+  /** How the length is sent when the endpoint does not take plain seconds. */
+  durationAs?: 'text' | 'suffix' | 'frames'
+  /** The resolution used until the project picks one, when the model offers several. */
+  defaultResolution?: string
+  /** List price in USD: per image, or per video second by resolution. Higgsfield models are priced by its own estimate endpoint instead. */
+  usd?: { image?: number; second?: Record<string, number> }
 }
 
 const MODELS = (catalog as unknown as { models: HfModel[] }).models
@@ -35,70 +45,294 @@ const MODELS = (catalog as unknown as { models: HfModel[] }).models
 export const HF_IMAGE_MODELS = MODELS.filter((m) => m.kind === 'image')
 export const HF_VIDEO_MODELS = MODELS.filter((m) => m.kind === 'video')
 
-export const GEMINI_IMAGE_MODELS: HfModel[] = [
-  {
-    id: 'gemini/imagen-3.0-generate-002',
-    name: 'Google Imagen 3',
-    family: 'Google',
+/** Services that can run a model. Every one of them can be used alone; none is required. */
+export type ModelProvider = 'higgsfield' | 'gemini' | 'fal' | 'cloudflare' | 'cli'
+
+export const PROVIDER_LABEL: Record<ModelProvider, string> = {
+  higgsfield: 'Higgsfield',
+  gemini: 'Google Gemini',
+  fal: 'Fal.ai',
+  cloudflare: 'Cloudflare',
+  cli: 'CLI di komputer'
+}
+
+/** The saved key (or tested setup) that a provider's models need. */
+export const PROVIDER_KEY: Record<ModelProvider, ApiProvider> = {
+  higgsfield: 'higgsfield',
+  gemini: 'gemini',
+  fal: 'fal',
+  cloudflare: 'cloudflare',
+  cli: 'cli-image'
+}
+
+/** Which service runs a model, read from its id. Only Higgsfield ids have no prefix. */
+export function providerOfModel(id: string | null | undefined): ModelProvider {
+  if (!id) return 'higgsfield'
+  if (id.startsWith('gemini/')) return 'gemini'
+  if (id.startsWith('fal-ai/')) return 'fal'
+  if (id.startsWith('@cf/')) return 'cloudflare'
+  if (id.startsWith('cli/')) return 'cli'
+  return 'higgsfield'
+}
+
+/** Models that were removed by their maker, mapped to the one that replaces them, so saved projects keep working. */
+const RENAMED_MODELS: Record<string, string> = {
+  // Imagen 3 was shut down by Google (Nov 2025); Nano Banana 2 Lite is the cheapest image model that replaced it.
+  'gemini/imagen-3.0-generate-002': 'gemini/gemini-3.1-flash-lite-image'
+}
+
+function textToImage(
+  id: string,
+  name: string,
+  family: string,
+  tags: string[],
+  note: string,
+  usd: number,
+  maxLength: number
+): HfModel {
+  return {
+    id,
+    name,
+    family,
     kind: 'image',
     input: { field: null, mode: 'none', max: 0 },
     required: ['prompt'],
-    props: { prompt: { type: 'string', maxLength: 4000 } },
+    props: { prompt: { type: 'string', maxLength } },
     durations: null,
-    tags: ['Google', 'Hemat / Cepat']
+    tags,
+    note,
+    usd: { image: usd }
   }
+}
+
+export const CLOUDFLARE_IMAGE_MODELS: HfModel[] = [
+  textToImage(
+    '@cf/bytedance/stable-diffusion-xl-lightning',
+    'SDXL Lightning · Cloudflare',
+    'Cloudflare',
+    ['Cloudflare', 'Hemat / Cepat'],
+    'SDXL Lightning via Cloudflare Workers AI · ukuran 16:9 atau 9:16 sungguhan · beta, gratis',
+    0,
+    2000
+  ),
+  textToImage(
+    '@cf/black-forest-labs/flux-1-schnell',
+    'FLUX.1 [schnell] · Cloudflare',
+    'Flux',
+    ['Cloudflare', 'Flux', 'Hemat / Cepat'],
+    'FLUX.1 Schnell via Cloudflare Workers AI · ukuran tidak bisa diatur (hasilnya persegi, terpotong di video 16:9)',
+    0.0006,
+    2048
+  ),
+  textToImage(
+    '@cf/leonardo/lucid-origin',
+    'Lucid Origin · Cloudflare',
+    'Cloudflare',
+    ['Cloudflare'],
+    'Lucid Origin (Leonardo) via Cloudflare Workers AI · teks dan detail tajam, ukuran 16:9 atau 9:16',
+    0.04,
+    2000
+  )
 ]
 
 export const FAL_IMAGE_MODELS: HfModel[] = [
-  {
-    id: 'fal-ai/flux/schnell',
-    name: 'FLUX.1 [schnell] · Fal.ai',
-    family: 'Flux',
-    kind: 'image',
-    input: { field: null, mode: 'none', max: 0 },
-    required: ['prompt'],
-    props: { prompt: { type: 'string', maxLength: 4000 } },
-    durations: null,
-    tags: ['Fal.ai', 'Flux', 'Hemat / Cepat']
-  },
-  {
-    id: 'fal-ai/flux/dev',
-    name: 'FLUX.1 [dev] · Fal.ai',
-    family: 'Flux',
-    kind: 'image',
-    input: { field: null, mode: 'none', max: 0 },
-    required: ['prompt'],
-    props: { prompt: { type: 'string', maxLength: 4000 } },
-    durations: null,
-    tags: ['Fal.ai', 'Flux']
-  }
+  textToImage(
+    'fal-ai/flux/schnell',
+    'FLUX.1 [schnell] · Fal.ai',
+    'Flux',
+    ['Fal.ai', 'Flux', 'Hemat / Cepat'],
+    'FLUX.1 Schnell via Fal.ai · sangat cepat dan hemat',
+    0.003,
+    4000
+  ),
+  textToImage('fal-ai/flux/dev', 'FLUX.1 [dev] · Fal.ai', 'Flux', ['Fal.ai', 'Flux'], 'FLUX.1 Dev via Fal.ai · kualitas tinggi', 0.025, 4000)
+]
+
+export const GEMINI_IMAGE_MODELS: HfModel[] = [
+  textToImage(
+    'gemini/gemini-3.1-flash-lite-image',
+    'Nano Banana 2 Lite · Google',
+    'Google',
+    ['Google', 'Hemat / Cepat'],
+    'Gemini 3.1 Flash Lite Image via kunci Gemini · model gambar Google tercepat dan termurah',
+    0.0336,
+    4000
+  ),
+  textToImage(
+    'gemini/gemini-nano-banana-2.1',
+    'Nano Banana 2.1 · Google',
+    'Google',
+    ['Google'],
+    'Gemini Nano Banana 2.1 via kunci Gemini · kualitas dan teks dalam gambar lebih baik',
+    0.0336,
+    4000
+  )
 ]
 
 export const CLI_IMAGE_MODELS: HfModel[] = [
-  {
-    id: 'cli/image',
-    name: 'CLI di komputer',
-    family: 'CLI',
-    kind: 'image',
-    input: { field: null, mode: 'none', max: 0 },
-    required: ['prompt'],
-    props: { prompt: { type: 'string', maxLength: 4000 } },
-    durations: null,
-    tags: ['CLI', 'Tanpa kunci']
-  }
+  textToImage(
+    'cli/image',
+    'CLI di komputer',
+    'CLI',
+    ['CLI', 'Tanpa kunci'],
+    'Gambar dari CLI di komputer (Antigravity atau perintah sendiri) · tanpa biaya per gambar, ±1 menit per gambar, tanpa lembar karakter',
+    0,
+    4000
+  )
 ]
 
-export const ALL_IMAGE_MODELS: HfModel[] = [...HF_IMAGE_MODELS, ...GEMINI_IMAGE_MODELS, ...FAL_IMAGE_MODELS, ...CLI_IMAGE_MODELS]
+/** Cheapest providers first, Higgsfield last: the list opens on what costs least, and no provider is pinned to the top. */
+export const ALL_IMAGE_MODELS: HfModel[] = [
+  ...CLOUDFLARE_IMAGE_MODELS,
+  ...FAL_IMAGE_MODELS,
+  ...GEMINI_IMAGE_MODELS,
+  ...CLI_IMAGE_MODELS,
+  ...HF_IMAGE_MODELS
+]
 
+/** Wan makes its clip from a frame count at this speed (Fal interpolates it up afterwards). */
+const WAN_FPS = 16
+
+function falVideo(spec: {
+  id: string
+  name: string
+  family: string
+  tags: string[]
+  note: string
+  resolutions: string[]
+  defaultResolution: string
+  /** Whether the endpoint takes `aspect_ratio` (Hailuo follows the frame's own shape). */
+  aspect: boolean
+  /** Whether the endpoint can make its own soundtrack, which this app switches off (narration and music come from the editor). */
+  audio: boolean
+  durations: HfModel['durations']
+  durationAs?: HfModel['durationAs']
+  fixed?: Record<string, unknown>
+  second: Record<string, number>
+}): HfModel {
+  const props: HfModel['props'] = {
+    prompt: { type: 'string', maxLength: 2000 },
+    resolution: { enum: spec.resolutions }
+  }
+  if (spec.aspect) props.aspect_ratio = { enum: ['16:9', '9:16'] }
+  if (spec.audio) props.generate_audio = { type: 'boolean' }
+  return {
+    id: spec.id,
+    name: spec.name,
+    family: spec.family,
+    kind: 'video',
+    input: { field: 'image_url', mode: 'first-frame', max: 1 },
+    required: ['image_url', 'prompt'],
+    props,
+    durations: spec.durations,
+    durationAs: spec.durationAs,
+    fixed: spec.fixed,
+    defaultResolution: spec.defaultResolution,
+    tags: spec.tags,
+    note: spec.note,
+    usd: { second: spec.second }
+  }
+}
+
+export const FAL_VIDEO_MODELS: HfModel[] = [
+  falVideo({
+    id: 'fal-ai/wan/v2.2-a14b/image-to-video',
+    name: 'Wan 2.2 A14B · Fal.ai',
+    family: 'Wan',
+    tags: ['Fal.ai', 'Wan', 'Hemat / Cepat'],
+    note: 'Wan 2.2 (Alibaba) via Fal.ai · 2–10 dtk, tanpa suara · paling murah, gerak natural',
+    resolutions: ['480p', '720p'],
+    defaultResolution: '720p',
+    aspect: true,
+    audio: false,
+    durations: { min: 2, max: 10 },
+    durationAs: 'frames',
+    fixed: { enable_prompt_expansion: false },
+    second: { '480p': 0.04, '720p': 0.08 }
+  }),
+  falVideo({
+    id: 'fal-ai/ltx-2.3/image-to-video/fast',
+    name: 'LTX 2.3 Fast · Fal.ai',
+    family: 'LTX',
+    tags: ['Fal.ai', 'LTX', 'Hemat / Cepat'],
+    note: 'LTX 2.3 Fast (Lightricks) via Fal.ai · 6, 8 atau 10 dtk · mulai dari 1080p',
+    resolutions: ['1080p', '1440p'],
+    defaultResolution: '1080p',
+    aspect: true,
+    audio: true,
+    durations: { values: [6, 8, 10] },
+    second: { '1080p': 0.06, '1440p': 0.12 }
+  }),
+  falVideo({
+    id: 'fal-ai/minimax/hailuo-02/standard/image-to-video',
+    name: 'Hailuo 02 Standard · Fal.ai',
+    family: 'Hailuo',
+    tags: ['Fal.ai', 'Hailuo', 'Hemat / Cepat'],
+    note: 'Hailuo 02 (MiniMax) via Fal.ai · 6 atau 10 dtk, 768p, tanpa suara · gerak halus',
+    resolutions: ['768P'],
+    defaultResolution: '768P',
+    aspect: false,
+    audio: false,
+    durations: { values: [6, 10] },
+    durationAs: 'text',
+    fixed: { prompt_optimizer: false },
+    second: { '768P': 0.045 }
+  }),
+  falVideo({
+    id: 'fal-ai/veo3.1/lite/image-to-video',
+    name: 'Veo 3.1 Lite · Fal.ai',
+    family: 'Veo',
+    tags: ['Fal.ai', 'Veo'],
+    note: 'Veo 3.1 Lite (Google) via Fal.ai · 4, 6 atau 8 dtk · kualitas tertinggi di antara pilihan murah (suara dimatikan)',
+    resolutions: ['720p', '1080p'],
+    defaultResolution: '720p',
+    aspect: true,
+    audio: true,
+    durations: { values: [4, 6, 8] },
+    durationAs: 'suffix',
+    second: { '720p': 0.03, '1080p': 0.05 }
+  })
+]
+
+export const ALL_VIDEO_MODELS: HfModel[] = [...FAL_VIDEO_MODELS, ...HF_VIDEO_MODELS]
+
+/** What a project falls back to when nothing better is known: the Higgsfield defaults every older project was made with. */
 export const DEFAULT_IMAGE_MODEL = 'marketing-studio/image/sunburst'
 export const DEFAULT_VIDEO_MODEL = 'kling-video/v3.0/std/image-to-video'
 
+/** The picker's "Rekomendasi" rows: the cheapest models that are good enough for story clips. */
+export const RECOMMENDED_IMAGE_MODEL = 'gemini/gemini-3.1-flash-lite-image'
+export const RECOMMENDED_VIDEO_MODEL = 'fal-ai/wan/v2.2-a14b/image-to-video'
+
+export function canonicalModelId(id: string | null | undefined): string | null | undefined {
+  return id ? (RENAMED_MODELS[id] ?? id) : id
+}
+
 export function getImageModel(id: string | null | undefined): HfModel {
-  return ALL_IMAGE_MODELS.find((m) => m.id === id) ?? ALL_IMAGE_MODELS.find((m) => m.id === DEFAULT_IMAGE_MODEL)!
+  const want = canonicalModelId(id)
+  return ALL_IMAGE_MODELS.find((m) => m.id === want) ?? ALL_IMAGE_MODELS.find((m) => m.id === DEFAULT_IMAGE_MODEL)!
 }
 
 export function getVideoModel(id: string | null | undefined): HfModel {
-  return HF_VIDEO_MODELS.find((m) => m.id === id) ?? HF_VIDEO_MODELS.find((m) => m.id === DEFAULT_VIDEO_MODEL)!
+  const want = canonicalModelId(id)
+  return ALL_VIDEO_MODELS.find((m) => m.id === want) ?? ALL_VIDEO_MODELS.find((m) => m.id === DEFAULT_VIDEO_MODEL)!
+}
+
+/** Image providers by preference, cheapest first, used to pick models for a new project from the providers that are ready. */
+const IMAGE_PREFERENCE: ModelProvider[] = ['cloudflare', 'fal', 'gemini', 'cli', 'higgsfield']
+const VIDEO_PREFERENCE: ModelProvider[] = ['fal', 'higgsfield']
+
+/**
+ * The models a new project starts with: the first model of the cheapest provider whose key works. With no working
+ * provider the Higgsfield defaults stay, so the pickers still show something valid.
+ */
+export function defaultModelsFor(ready: ReadonlySet<ModelProvider>): { imageModel: string; videoModel: string } {
+  const image = IMAGE_PREFERENCE.find((p) => ready.has(p))
+  const video = VIDEO_PREFERENCE.find((p) => ready.has(p))
+  return {
+    imageModel: (image && image !== 'higgsfield' ? ALL_IMAGE_MODELS.find((m) => providerOfModel(m.id) === image)?.id : undefined) ?? DEFAULT_IMAGE_MODEL,
+    videoModel: (video && video !== 'higgsfield' ? ALL_VIDEO_MODELS.find((m) => providerOfModel(m.id) === video)?.id : undefined) ?? DEFAULT_VIDEO_MODEL
+  }
 }
 
 /** How many character sheets an image model accepts as references. 0 means sheets are not used. */
@@ -147,7 +381,9 @@ function clip(text: string, limit: number): string {
  * camera moves) and 1080p video, or the closest the model offers.
  */
 function resolutionFor(m: HfModel, want?: string | null): string | number | undefined {
-  if (want && m.props.resolution?.enum?.some((v) => String(v) === want)) return m.props.resolution.enum.find((v) => String(v) === want)
+  const offered = (v: string): string | number | undefined => m.props.resolution?.enum?.find((o) => String(o) === v)
+  if (want && offered(want) !== undefined) return offered(want)
+  if (m.defaultResolution && offered(m.defaultResolution) !== undefined) return offered(m.defaultResolution)
   return pick(m.props.resolution, m.kind === 'image' ? ['2k', '2K', '1080p', '1k'] : ['1080p', '2K', '2k', '720p'])
 }
 
@@ -282,17 +518,43 @@ export function videoBody(
 ): Record<string, unknown> {
   const body = common(m, videoPrompt(m, prompt), aspect, resolution)
   const duration = fitDuration(m, seconds)
-  if (duration != null) body.duration = duration
+  if (duration != null) {
+    if (m.durationAs === 'frames') {
+      // Wan takes a frame count (17 to 161) instead of seconds.
+      body.num_frames = Math.min(161, Math.max(17, Math.round(duration * WAN_FPS) + 1))
+      body.frames_per_second = WAN_FPS
+    } else body.duration = m.durationAs === 'text' ? String(duration) : m.durationAs === 'suffix' ? `${duration}s` : duration
+  }
   if (m.input.field) body[m.input.field] = m.input.mode === 'reference' ? [imageUrl] : imageUrl
+  Object.assign(body, m.fixed)
   return checkRequired(m, body)
+}
+
+/** USD for one image, or for `seconds` of video at `resolution`, from a model's list price. Null when the model has none (Higgsfield). */
+export function listPriceUsd(m: HfModel, seconds = 0, resolution?: string | null): number | null {
+  if (m.usd?.image != null) return m.usd.image
+  const rates = m.usd?.second
+  if (!rates) return null
+  const res = effectiveResolution(m, resolution)
+  const rate = res != null ? rates[res] : undefined
+  return rate == null ? null : rate * seconds
+}
+
+const usdFigure = (n: number): string => String(Number(n.toPrecision(2)))
+
+/** The price as the picker shows it, e.g. "US$0.04–0.08 / detik". Null for Higgsfield, which shows credits. */
+export function priceNote(m: HfModel): string | null {
+  if (m.usd?.image != null) return m.usd.image === 0 ? 'Gratis' : `US$${usdFigure(m.usd.image)} / gambar`
+  const rates = Object.values(m.usd?.second ?? {})
+  if (!rates.length) return null
+  const lo = Math.min(...rates)
+  const hi = Math.max(...rates)
+  return lo === hi ? `US$${usdFigure(lo)} / detik` : `US$${usdFigure(lo)}–${usdFigure(hi)} / detik`
 }
 
 /** What the app will actually request from this model, in words. */
 export function describeModel(m: HfModel): string {
-  if (m.id === 'cli/image') return 'Gambar dari CLI di komputer (Antigravity atau perintah sendiri) · tanpa biaya per gambar, ±1 menit per gambar, tanpa lembar karakter'
-  if (m.id.startsWith('gemini/')) return 'Google Imagen 3 via Gemini API · ~$0.03/gambar'
-  if (m.id === 'fal-ai/flux/schnell') return 'FLUX.1 Schnell via Fal.ai · sangat cepat & hemat (~$0.003/gambar)'
-  if (m.id === 'fal-ai/flux/dev') return 'FLUX.1 Dev via Fal.ai · kualitas tinggi (~$0.025/gambar)'
+  if (m.note) return m.note
   if (m.kind === 'image') {
     // Size and quality are picked per project, next to the model.
     const refs = maxRefs(m)
@@ -302,16 +564,19 @@ export function describeModel(m: HfModel): string {
   return [durationLabel(m), m.input.mode === 'reference' ? 'gambar klip jadi referensi' : 'mulai dari gambar klip'].filter(Boolean).join(' · ')
 }
 
-/** Picker rows, the default first with a "Rekomendasi" tag so first-time users have a safe choice. */
+/** Picker rows. The recommended model comes first with a "Rekomendasi" tag, then the rest in catalog order (cheapest providers first). */
 export function hfModelOptions(kind: 'image' | 'video'): ModelOption[] {
-  const list = kind === 'image' ? ALL_IMAGE_MODELS : HF_VIDEO_MODELS
-  const recommended = kind === 'image' ? DEFAULT_IMAGE_MODEL : DEFAULT_VIDEO_MODEL
-  return [...list.filter((m) => m.id === recommended), ...list.filter((m) => m.id !== recommended)].map((m) => ({
-    id: m.id,
-    name: m.name,
-    family: m.family,
-    description: describeModel(m),
-    usd: m.id.startsWith('gemini/') ? 0.03 : m.id === 'fal-ai/flux/schnell' ? 0.003 : m.id === 'fal-ai/flux/dev' ? 0.025 : null,
-    tags: m.id === recommended ? ['Rekomendasi', ...m.tags] : m.tags
-  }))
+  const list = kind === 'image' ? ALL_IMAGE_MODELS : ALL_VIDEO_MODELS
+  const recommended = kind === 'image' ? RECOMMENDED_IMAGE_MODEL : RECOMMENDED_VIDEO_MODEL
+  return [...list.filter((m) => m.id === recommended), ...list.filter((m) => m.id !== recommended)].map((m) => {
+    const own = providerOfModel(m.id) === 'higgsfield'
+    return {
+      id: m.id,
+      name: m.name,
+      family: m.family,
+      description: describeModel(m),
+      priceNote: priceNote(m) ?? undefined,
+      tags: [...(m.id === recommended ? ['Rekomendasi'] : []), ...(own ? ['Higgsfield'] : []), ...m.tags]
+    }
+  })
 }

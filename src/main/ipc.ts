@@ -59,6 +59,7 @@ import { clearSecret, keyStatuses, recordCheck, revealSecret, setSecret } from '
 import { dropCache, getSettings, setSettings } from './settings'
 import { probeDurationMs, probeSize } from './services/audio'
 import * as cli from './services/cli'
+import * as cloudflare from './services/cloudflare'
 import * as eleven from './services/elevenlabs'
 import * as fal from './services/fal'
 import * as gemini from './services/gemini'
@@ -85,6 +86,7 @@ async function testProvider(provider: ApiProvider, key?: string): Promise<KeyTes
   if (provider === 'higgsfield') return hf.testCredentials(key)
   if (provider === 'elevenlabs') return eleven.testKey(key)
   if (provider === 'fal') return fal.testKey(key)
+  if (provider === 'cloudflare') return cloudflare.testKey(key)
   if (provider === 'cli') {
     const s = getSettings()
     return cli.testCli(s.cliTool, s.cliCommand, s.llmModels.cli.trim())
@@ -304,6 +306,7 @@ export function registerIpc(): void {
     clearSecret(provider)
     dropCache(`models:${provider}`)
     if (provider === 'higgsfield') forgetEstimates()
+    if (provider === 'cloudflare') setSettings({ cloudflareAccountId: '' })
     if (provider === 'custom') setSettings({ customBaseUrl: '' })
     if (provider === 'cli') setSettings({ cliCommand: '' })
     if (provider === 'cli-image') setSettings({ cliImageCommand: '' })

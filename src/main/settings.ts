@@ -13,6 +13,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   cliCommand: '',
   cliImageTool: 'agy',
   cliImageCommand: '',
+  cloudflareAccountId: '',
   geminiTtsModel: 'gemini-3.8-flash-tts',
   elevenModel: 'eleven_multilingual_v2',
   imageModel: DEFAULT_IMAGE_MODEL,

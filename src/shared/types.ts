@@ -3,7 +3,7 @@ export type ProjectStatus = 'draft' | 'script' | 'storyboard' | 'editing' | 'exp
 export type AspectRatio = '16:9' | '9:16'
 export type TtsProvider = 'gemini' | 'elevenlabs'
 export type LlmProvider = 'gemini' | 'openrouter' | 'groq' | 'custom' | 'cli'
-export type ApiProvider = 'higgsfield' | 'gemini' | 'elevenlabs' | 'openrouter' | 'groq' | 'custom' | 'fal' | 'cli' | 'cli-image'
+export type ApiProvider = 'higgsfield' | 'gemini' | 'elevenlabs' | 'openrouter' | 'groq' | 'custom' | 'fal' | 'cloudflare' | 'cli' | 'cli-image'
 /** Which program the `cli` LLM provider runs; `custom` is a user-written shell command. */
 export type CliTool = 'claude' | 'codex' | 'agy' | 'custom'
 /** Which program makes images for the `cli/image` model; only Antigravity has a built-in image tool. */
@@ -308,6 +308,8 @@ export interface AppSettings {
   cliImageTool: CliImageTool
   /** Shell command for `cliImageTool: 'custom'`: gets the prompt on stdin and must write one image file to `{output}`. `{aspect}` is 16:9 or 9:16. */
   cliImageCommand: string
+  /** Cloudflare account that owns the Workers AI token. It is an identifier, not a secret, so it lives here and only the token is encrypted. */
+  cloudflareAccountId: string
   geminiTtsModel: string
   elevenModel: string
   /** Higgsfield models for new projects: the last ones picked in the Idea step. */
@@ -348,6 +350,8 @@ export interface ModelOption {
   usd?: number | null
   /** What the credits pay for, e.g. "10 dtk". */
   creditUnit?: string
+  /** Fixed price text for models outside Higgsfield, e.g. "US$0.003 / gambar". Shown instead of credits. */
+  priceNote?: string
 }
 
 export interface ModelList {

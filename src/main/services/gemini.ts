@@ -5,6 +5,7 @@ import { getSecret, requireSecret } from '../secrets'
 import { getSettings, readCache, writeCache } from '../settings'
 import { isWav, pcmToWav } from './audio'
 import { extractJson } from './json'
+import { readError } from './http'
 
 function client(key?: string): GoogleGenAI {
   return new GoogleGenAI({ apiKey: key ?? requireSecret('gemini') })
@@ -93,38 +94,51 @@ export async function generateJson(model: string, system: string, prompt: string
   }
 }
 
-/** Draws an image with Google Imagen 3 (e.g. imagen-3.0-generate-002). */
+interface InteractionStep {
+  type?: string
+  content?: { type?: string; text?: string; data?: string; mime_type?: string }[]
+}
+
+/**
+ * Draws an image with a Nano Banana model (e.g. gemini-3.1-flash-lite-image). These models only answer through the
+ * Interactions API; Imagen 3, which used generateImages, was shut down by Google.
+ */
 export async function generateImage(
   prompt: string,
   aspect: AspectRatio,
-  model = 'imagen-3.0-generate-002',
+  model = 'gemini-3.1-flash-lite-image',
   signal?: AbortSignal
 ): Promise<{ bytes: Buffer; contentType: string }> {
+  const key = requireSecret('gemini')
+  const timeout = AbortSignal.timeout(3 * 60 * 1000)
+  let res: Response
   try {
-    const res = await client().models.generateImages({
-      model,
-      prompt,
-      config: {
-        numberOfImages: 1,
-        aspectRatio: aspect === '9:16' ? '9:16' : '16:9',
-        outputMimeType: 'image/jpeg',
-        abortSignal: signal
-      }
+    res = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
+      method: 'POST',
+      headers: { 'x-goog-api-key': key, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model,
+        input: [{ type: 'text', text: prompt }],
+        response_format: { type: 'image', mime_type: 'image/jpeg', aspect_ratio: aspect === '9:16' ? '9:16' : '16:9', image_size: '1K' }
+      }),
+      signal: signal ? AbortSignal.any([signal, timeout]) : timeout
     })
-    const img = res.generatedImages?.[0]?.image
-    if (!img?.imageBytes) {
-      const reason = res.generatedImages?.[0]?.raiFilteredReason
-      if (reason) throw new Error(`Gambar disaring oleh kebijakan AI Google: ${reason}`)
-      throw new Error('Gemini selesai tanpa menghasilkan gambar')
-    }
-    return {
-      bytes: Buffer.from(img.imageBytes, 'base64'),
-      contentType: img.mimeType || 'image/jpeg'
-    }
   } catch (e) {
     if (signal?.aborted) throw new Error('Dibatalkan')
+    if ((e as Error).name === 'TimeoutError') throw new Error('Gemini terlalu lama membuat gambar.')
     throw friendly(e)
   }
+  if (!res.ok) throw friendly(new Error(`HTTP ${res.status}: ${await readError(res)}`))
+
+  const data = (await res.json()) as { steps?: InteractionStep[] }
+  const blocks = (data.steps ?? []).filter((s) => s.type === 'model_output').flatMap((s) => s.content ?? [])
+  const image = blocks.find((b) => b.type === 'image' && b.data)
+  if (!image?.data) {
+    // A refusal comes back as text; show it so the user knows what to change in the scene.
+    const said = blocks.find((b) => b.type === 'text' && b.text)?.text
+    throw new Error(said ? `Gemini tidak membuat gambar: ${said.slice(0, 200)}` : 'Gemini selesai tanpa menghasilkan gambar')
+  }
+  return { bytes: Buffer.from(image.data, 'base64'), contentType: image.mime_type || 'image/jpeg' }
 }
 
 /** Speaks one narration line. Returns a WAV file (24 kHz mono 16-bit). */

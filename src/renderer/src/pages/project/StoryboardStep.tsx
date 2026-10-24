@@ -19,7 +19,7 @@ import {
   Trash2,
   Volume2
 } from 'lucide-react'
-import { effectiveResolution, fitDuration, getImageModel, getVideoModel } from '@shared/higgsfield'
+import { PROVIDER_LABEL, effectiveResolution, fitDuration, getImageModel, getVideoModel, providerOfModel } from '@shared/higgsfield'
 import { defaultGraphic } from '@shared/graphics'
 import { CAMERA_PRESETS, MOTION_STRENGTHS, cameraAt, cameraCss } from '@shared/motion'
 import { needsVisual } from '@shared/script'
@@ -35,6 +35,9 @@ import { useApp } from '../../store/app'
 import { isRunning, jobFor, useProject } from '../../store/project'
 import { CharacterModal } from './CharacterModal'
 import { MotionEditor, renderState } from './MotionEditor'
+
+/** US dollars with 2 decimals, 3 for cents-level prices so they do not round to nothing. */
+const usdText = (n: number): string => `US$${n.toFixed(n < 0.1 ? 3 : 2)}`
 
 function useAudio(): { play: (url: string) => void; stop: () => void; playing: string | null } {
   const ref = useRef<HTMLAudioElement | null>(null)
@@ -159,6 +162,9 @@ function ClipPanel({ clip, index, total }: { clip: Clip; index: number; total: n
 
   // Capped by window height, so the settings under the fixed preview keep enough room.
   const aspect = project.aspectRatio === '9:16' ? 'aspect-[9/16] h-[min(300px,40vh)] mx-auto' : 'aspect-video h-[min(282px,36vh)] max-w-full mx-auto'
+
+  const videoProviderId = providerOfModel(project?.videoModel)
+  const videoSub = videoProviderId === 'higgsfield' ? 'Higgsfield · pakai kredit' : `${PROVIDER_LABEL[videoProviderId]} · berbayar per detik`
 
   return (
     <aside className="flex min-h-0 flex-col border-l border-line bg-surface">
@@ -386,7 +392,7 @@ function ClipPanel({ clip, index, total }: { clip: Clip; index: number; total: n
               {(
                 [
                   { id: 'camera', title: 'Gerak kamera', sub: 'Gratis · dirender di komputer', icon: <Move className="size-[22px]" />, subCls: 'text-ok-ink' },
-                  { id: 'video', title: 'Video AI', sub: 'Higgsfield · pakai kredit', icon: <Film className="size-[22px]" />, subCls: 'text-ink-2' }
+                  { id: 'video', title: 'Video AI', sub: videoSub, icon: <Film className="size-[22px]" />, subCls: 'text-ink-2' }
                 ] as const
               ).map((o) => {
                 const on = clip.motionType === o.id
@@ -498,7 +504,7 @@ export function StoryboardStep() {
   const { toast } = useApp()
   /** A character id, "new" for an unsaved one, or null. */
   const [openChar, setOpenChar] = useState<string | null>(null)
-  const [videoCredits, setVideoCredits] = useState<number | null>(null)
+  const [videoCost, setVideoCost] = useState<number | null>(null)
   const [planning, setPlanning] = useState(false)
   const [proposing, setProposing] = useState(false)
   const lastNarration = useRef<string | null>(null)
@@ -541,23 +547,33 @@ export function StoryboardStep() {
     return stats.needVideo.map((c) => fitDuration(model, c.durationMs / 1000) ?? 5).join(',')
   }, [stats.needVideo, project?.videoModel])
   useEffect(() => {
-    if (!project || !videoLengths) return setVideoCredits(null)
+    if (!project || !videoLengths) return setVideoCost(null)
     const lengths = videoLengths.split(',').map(Number)
     const unique = [...new Set(lengths)]
     const model = getVideoModel(project.videoModel).id
+    const field = providerOfModel(model) === 'higgsfield' ? 'credits' : 'usd'
     let live = true
     void Promise.all(unique.map((s) => window.api.generate.estimate('video', model, project.aspectRatio, s, project.videoResolution))).then((list) => {
       if (!live) return
-      if (list.some((e) => e?.credits == null)) return setVideoCredits(null)
-      const bySec = new Map(unique.map((s, i) => [s, list[i]!.credits]))
-      setVideoCredits(lengths.reduce((n, s) => n + (bySec.get(s) ?? 0), 0))
+      if (list.some((e) => e?.[field] == null)) return setVideoCost(null)
+      const bySec = new Map(unique.map((s, i) => [s, list[i]![field] ?? 0]))
+      setVideoCost(lengths.reduce((n, s) => n + (bySec.get(s) ?? 0), 0))
     })
     return () => {
       live = false
     }
-  }, [videoLengths, project?.aspectRatio, project?.videoResolution])
+  }, [videoLengths, project?.videoModel, project?.aspectRatio, project?.videoResolution])
 
   if (!project) return null
+  const videoProvider = providerOfModel(getVideoModel(project.videoModel).id)
+  const videoByCredits = videoProvider === 'higgsfield'
+  // Higgsfield bills in credits; every other provider bills real USD.
+  const imageCost = (() => {
+    if (!imageEst) return ''
+    if (providerOfModel(project.imageModel) === 'higgsfield')
+      return imageEst.credits && imageEst.credits > 0 ? `${Math.round(imageEst.credits * stats.needImg * 10) / 10} kr` : ''
+    return imageEst.usd && imageEst.usd > 0 ? usdText(imageEst.usd * stats.needImg) : ''
+  })()
   const selIndex = Math.max(0, clips.findIndex((c) => c.id === selectedClipId))
   const sel = clips[selIndex]
 
@@ -584,7 +600,11 @@ export function StoryboardStep() {
       title: `Jadikan ${n} klip video AI?`,
       body:
         `Setiap gambar klip dianimasikan dengan ${getVideoModel(project!.videoModel).name}, panjangnya mengikuti suara narasi klip itu.` +
-        (videoCredits != null ? ` Perkiraan biaya ${Math.round(videoCredits * 10) / 10} kredit Higgsfield.` : '') +
+        (videoCost != null
+          ? videoByCredits
+            ? ` Perkiraan biaya ${Math.round(videoCost * 10) / 10} kredit Higgsfield.`
+            : ` Perkiraan biaya ${usdText(videoCost)} (${PROVIDER_LABEL[videoProvider]}).`
+          : '') +
         ' Klip yang sudah punya video tidak dibuat ulang. Klip motion tidak ikut, karena sudah punya render sendiri.',
       confirm: `Buat ${n} video`
     })
@@ -692,15 +712,7 @@ export function StoryboardStep() {
           onClick={() => void bulk(() => window.api.generate.missingImages(project.id))}
         >
           Generate {stats.needImg} gambar
-          {stats.needImg > 0 && imageEst && (
-            <span className="font-normal text-ink-2">
-              ≈ {imageEst.credits && imageEst.credits > 0
-                ? `${Math.round(imageEst.credits * stats.needImg * 10) / 10} kr`
-                : imageEst.usd && imageEst.usd > 0
-                  ? `$${(imageEst.usd * stats.needImg).toFixed(2)}`
-                  : ''}
-            </span>
-          )}
+          {stats.needImg > 0 && imageCost && <span className="font-normal text-ink-2">≈ {imageCost}</span>}
         </Button>
         {readyForVideo && (
           <Button
@@ -716,8 +728,8 @@ export function StoryboardStep() {
               : stats.needVideo.length === 0
                 ? 'Semua klip sudah video'
                 : `Jadikan ${stats.needVideo.length} video`}
-            {stats.videoRunning === 0 && videoCredits != null && stats.needVideo.length > 0 && (
-              <span className="font-normal text-white/80">≈ {Math.round(videoCredits * 10) / 10} kr</span>
+            {stats.videoRunning === 0 && videoCost != null && stats.needVideo.length > 0 && (
+              <span className="font-normal text-white/80">≈ {videoByCredits ? `${Math.round(videoCost * 10) / 10} kr` : usdText(videoCost)}</span>
             )}
           </Button>
         )}

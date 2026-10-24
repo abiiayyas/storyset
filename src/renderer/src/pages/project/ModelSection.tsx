@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Film, Image as ImageIcon, Move, Users } from 'lucide-react'
 import {
+  PROVIDER_KEY,
+  PROVIDER_LABEL,
   effectiveImageResolution,
   effectiveQuality,
   effectiveResolution,
@@ -9,8 +11,10 @@ import {
   getVideoModel,
   hfModelOptions,
   maxRefs,
+  providerOfModel,
   qualityOptions,
-  resolutionOptions
+  resolutionOptions,
+  type ModelProvider
 } from '@shared/higgsfield'
 import type { CreditEstimate, ModelOption, Project } from '@shared/types'
 import { ModelLogo } from '../../components/ModelLogo'
@@ -21,42 +25,61 @@ import { useEstimate, useEstimates } from '../../lib/useEstimate'
 
 const IMAGE_OPTIONS = hfModelOptions('image')
 const VIDEO_OPTIONS = hfModelOptions('video')
-const IMAGE_IDS = IMAGE_OPTIONS.map((o) => o.id)
+// Only Higgsfield prices come from a live estimate; every other provider has a fixed list price in the catalog.
+const HF_IMAGE_IDS = IMAGE_OPTIONS.filter((o) => providerOfModel(o.id) === 'higgsfield').map((o) => o.id)
+const HF_VIDEO_IDS = VIDEO_OPTIONS.filter((o) => providerOfModel(o.id) === 'higgsfield').map((o) => o.id)
 const QUALITY_LABELS: Record<string, string> = { low: 'Rendah', medium: 'Sedang', high: 'Tinggi' }
-const VIDEO_IDS = VIDEO_OPTIONS.map((o) => o.id)
 
-/** Adds each model's estimated credits to its picker row once a Higgsfield key is known to exist. */
+/** Adds each Higgsfield model's estimated credits to its picker row once a Higgsfield key is known to exist. */
 function withCosts(options: ModelOption[], costs: Record<string, CreditEstimate | null>, unit: (id: string) => string, on: boolean): ModelOption[] {
   if (!on) return options
-  return options.map((o) => ({
-    ...o,
-    credits: o.id in costs ? (costs[o.id]?.credits ?? null) : undefined,
-    usd: costs[o.id]?.usd ?? null,
-    creditUnit: unit(o.id)
-  }))
+  return options.map((o) =>
+    providerOfModel(o.id) !== 'higgsfield'
+      ? o
+      : {
+          ...o,
+          credits: o.id in costs ? (costs[o.id]?.credits ?? null) : undefined,
+          usd: costs[o.id]?.usd ?? null,
+          creditUnit: unit(o.id)
+        }
+  )
 }
 
+const MISSING_KEY: Record<ModelProvider, string> = {
+  higgsfield: 'Perkiraan kredit muncul setelah kunci Higgsfield diisi di Pengaturan.',
+  gemini: 'Kunci Google Gemini belum diisi di Pengaturan.',
+  fal: 'Kunci Fal.ai belum diisi di Pengaturan.',
+  cloudflare: 'Token dan Account ID Cloudflare belum diisi di Pengaturan.',
+  cli: 'CLI gambar belum diatur dan dites di Pengaturan.'
+}
+
+function usdText(n: number): string {
+  return `US$${n.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: n < 0.1 ? 4 : 2 })}`
+}
+
+/**
+ * The price line under a model picker. Higgsfield shows credits (`children`); the others show dollars from their list
+ * price: per image, or per video of the chosen length.
+ */
 function Cost({
   value,
   hasKey,
-  provider = 'higgsfield',
-  modelId,
-  clipCount = 1,
+  provider,
+  per,
+  count = 1,
   children
 }: {
   value: CreditEstimate | null | undefined
   hasKey: boolean | null
-  provider?: 'higgsfield' | 'gemini' | 'fal' | 'cli-image'
-  modelId?: string
-  clipCount?: number
+  provider: ModelProvider
+  /** What one price pays for, e.g. "gambar" or "video 5 detik, 720p". */
+  per: string
+  /** How many of them the project needs; the total is only shown when it is more than one. */
+  count?: number
   children: (credits: number) => ReactNode
 }) {
-  if (hasKey === false) {
-    if (provider === 'gemini') return <span className="text-muted">Kunci Google Gemini belum diisi di Pengaturan.</span>
-    if (provider === 'fal') return <span className="text-muted">Kunci Fal.ai belum diisi di Pengaturan.</span>
-    if (provider === 'cli-image') return <span className="text-muted">CLI gambar belum diatur dan dites di Pengaturan.</span>
-    return <span className="text-muted">Perkiraan kredit muncul setelah kunci Higgsfield diisi di Pengaturan.</span>
-  }
+  if (hasKey === false) return <span className="text-muted">{MISSING_KEY[provider]}</span>
+  if (provider === 'cli') return <span>Tanpa biaya per gambar (memakai kuota CLI di komputermu) · ±1 menit per gambar</span>
   if (value === undefined)
     return (
       <span className="flex items-center gap-1.5 text-muted">
@@ -65,26 +88,22 @@ function Cost({
       </span>
     )
   if (value === null) return <span className="text-muted">Perkiraan biaya belum tersedia.</span>
-  if (provider === 'gemini') {
-    const usdPer = value.usd ?? 0.03
-    return (
-      <span>
-        ≈ ${usdPer} per gambar · {clipCount} gambar ≈ <b className="font-semibold text-ink">${(usdPer * clipCount).toFixed(2)}</b> (Google Gemini)
-      </span>
-    )
-  }
-  if (provider === 'cli-image') {
-    return <span>Tanpa biaya per gambar (memakai kuota CLI di komputermu) · ±1 menit per gambar</span>
-  }
-  if (provider === 'fal') {
-    const usdPer = value.usd ?? (modelId?.includes('schnell') ? 0.003 : 0.025)
-    return (
-      <span>
-        ≈ ${usdPer} per gambar · {clipCount} gambar ≈ <b className="font-semibold text-ink">${(usdPer * clipCount).toFixed(3)}</b> (Fal.ai)
-      </span>
-    )
-  }
-  return <span>{children(value.credits)}</span>
+  if (provider === 'higgsfield') return <span>{children(value.credits)}</span>
+  if (value.usd == null) return <span className="text-muted">Perkiraan biaya belum tersedia.</span>
+  const allowance = provider === 'cloudflare' ? ' · jatah gratis 10.000 neuron per hari' : ''
+  if (value.usd === 0) return <span>Gratis per {per}{allowance}</span>
+  return (
+    <span>
+      ≈ {usdText(value.usd)} per {per}
+      {count > 1 && (
+        <>
+          {' '}
+          · {count} {per.split(' ')[0]} ≈ <b className="font-semibold text-ink">{usdText(value.usd * count)}</b>
+        </>
+      )}{' '}
+      ({PROVIDER_LABEL[provider]}){allowance}
+    </span>
+  )
 }
 
 function Card({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {
@@ -99,7 +118,7 @@ function Card({ icon, title, children }: { icon: ReactNode; title: string; child
   )
 }
 
-/** Which Higgsfield models draw and animate this project's clips. */
+/** Which models draw and animate this project's clips, from any provider whose key is saved. */
 export function ModelSection({
   project,
   clipCount,
@@ -134,13 +153,14 @@ export function ModelSection({
     void window.api.settings.keys().then((k) => setKeys(k))
   }, [])
 
-  const imageProvider = image.id.startsWith('gemini/') ? 'gemini' : image.id.startsWith('fal-ai/') ? 'fal' : image.id.startsWith('cli/') ? 'cli-image' : 'higgsfield'
-  const hasImageKey = !!keys.find((k) => k.provider === imageProvider)?.configured
-  const hasHfKey = !!keys.find((k) => k.provider === 'higgsfield')?.configured
+  const imageProvider = providerOfModel(image.id)
+  const videoProvider = providerOfModel(video.id)
+  const hasKeyFor = (p: ModelProvider): boolean => !!keys.find((k) => k.provider === PROVIDER_KEY[p])?.configured
+  const hasHfKey = hasKeyFor('higgsfield')
 
-  const imageCosts = useEstimates('image', IMAGE_IDS, project.aspectRatio, undefined, hasImageKey, project.imageResolution, project.imageQuality)
-  const videoCosts = useEstimates('video', VIDEO_IDS, project.aspectRatio, perClip, hasHfKey)
-  const imageModels = useMemo(() => withCosts(IMAGE_OPTIONS, imageCosts, () => '', hasImageKey), [imageCosts, hasImageKey])
+  const imageCosts = useEstimates('image', HF_IMAGE_IDS, project.aspectRatio, undefined, hasHfKey, project.imageResolution, project.imageQuality)
+  const videoCosts = useEstimates('video', HF_VIDEO_IDS, project.aspectRatio, perClip, hasHfKey)
+  const imageModels = useMemo(() => withCosts(IMAGE_OPTIONS, imageCosts, () => '', hasHfKey), [imageCosts, hasHfKey])
   const videoModels = useMemo(
     () => withCosts(VIDEO_OPTIONS, videoCosts, (id) => `${fitDuration(getVideoModel(id), perClip)} dtk`, hasHfKey),
     [videoCosts, perClip, hasHfKey]
@@ -149,9 +169,9 @@ export function ModelSection({
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-baseline gap-2">
-        <span className="text-sm font-semibold">Model AI</span>
+        <span className="shrink-0 text-sm font-semibold">Model AI</span>
         <span className="text-[13px] text-muted">
-          {IMAGE_OPTIONS.length} model gambar (Higgsfield, Gemini, Fal.ai) dan {VIDEO_OPTIONS.length} model video
+          {IMAGE_OPTIONS.length} model gambar dan {VIDEO_OPTIONS.length} model video · pakai yang kuncinya sudah kamu isi
         </span>
       </div>
       <div className="grid grid-cols-2 gap-3">
@@ -159,10 +179,10 @@ export function ModelSection({
           <ModelPicker
             value={image.id}
             models={imageModels}
-            footerNote={hasImageKey ? (imageProvider === 'higgsfield' ? 'kredit per gambar, perkiraan Higgsfield' : 'biaya per gambar') : undefined}
+            footerNote={hasHfKey ? 'kredit per gambar untuk model Higgsfield' : undefined}
             renderIcon={(m) => <ModelLogo family={m.family} />}
             detail="description"
-            tagFilters={['Rekomendasi', 'Referensi', 'Hemat / Cepat', 'Google', 'Fal.ai', 'CLI', 'GPT Image', 'Soul', 'Recraft', '4K']}
+            tagFilters={['Rekomendasi', 'Hemat / Cepat', 'Cloudflare', 'Fal.ai', 'Google', 'CLI', 'Higgsfield', 'Referensi', 'GPT Image', 'Soul', 'Recraft', '4K']}
             menuClassName="w-[430px]"
             onChange={(id) => onChange({ imageModel: id })}
           />
@@ -191,7 +211,7 @@ export function ModelSection({
             </div>
           )}
           <p className="text-[12.5px] leading-snug text-ink-2">
-            <Cost value={imageCost} hasKey={hasImageKey} provider={imageProvider} modelId={image.id} clipCount={clipCount}>
+            <Cost value={imageCost} hasKey={hasKeyFor(imageProvider)} provider={imageProvider} per="gambar" count={clipCount}>
               {(c) => (
                 <>
                   ≈ {creditLabel(c)} kredit per gambar · {clipCount} gambar ≈ <b className="font-semibold text-ink">{creditLabel(c * clipCount)} kredit</b>
@@ -210,10 +230,10 @@ export function ModelSection({
           <ModelPicker
             value={video.id}
             models={videoModels}
-            footerNote={hasHfKey ? `kredit per video untuk klip ±${perClip} detik` : undefined}
+            footerNote={hasHfKey ? `kredit per video untuk klip ±${perClip} detik (model Higgsfield)` : undefined}
             renderIcon={(m) => <ModelLogo family={m.family} />}
             detail="description"
-            tagFilters={['Rekomendasi', 'Kling', 'Seedance', 'Wan', 'Referensi', '4K']}
+            tagFilters={['Rekomendasi', 'Hemat / Cepat', 'Fal.ai', 'Wan', 'LTX', 'Hailuo', 'Veo', 'Higgsfield', 'Kling', 'Seedance', 'Referensi', '4K']}
             align="right"
             menuClassName="w-[430px]"
             onChange={(id) => onChange({ videoModel: id })}
@@ -233,7 +253,7 @@ export function ModelSection({
             resolution && <p className="text-[12.5px] text-ink-2">Resolusi {resolution} (satu-satunya pilihan model ini)</p>
           )}
           <p className="text-[12.5px] leading-snug text-ink-2">
-            <Cost value={videoCost} hasKey={hasHfKey}>
+            <Cost value={videoCost} hasKey={hasKeyFor(videoProvider)} provider={videoProvider} per={`video ${seconds} detik${resolution ? `, ${resolution}` : ''}`}>
               {(c) => (
                 <>
                   ≈ {creditLabel(c)} kredit per video {seconds} detik{resolution ? `, ${resolution}` : ''}

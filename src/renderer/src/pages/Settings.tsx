@@ -137,6 +137,7 @@ function KeyForm({
   link,
   linkLabel,
   customUrl,
+  extra,
   onChanged,
   onSaved
 }: {
@@ -150,6 +151,8 @@ function KeyForm({
   link: string | null
   linkLabel: string
   customUrl?: string
+  /** A plain-text field shown before the key; `beforeSave` runs first so the key test can already use it. */
+  extra?: { label: string; value: string; onChange: (v: string) => void; placeholder: string; beforeSave: () => Promise<void> }
   onChanged: () => void
   onSaved?: (r: KeyTestResult) => void
 }) {
@@ -174,7 +177,7 @@ function KeyForm({
   // The stored key is shown masked; the custom endpoint keeps an editable (optional) key field.
   const showStored = !isCustom && !editing && !!preview
   const urlChanged = isCustom && url.trim() !== (customUrl ?? '').trim()
-  const canSave = isCustom ? !!url.trim() && (urlChanged || !!key.trim() || !configured) : !showStored && !!key.trim()
+  const canSave = isCustom ? !!url.trim() && (urlChanged || !!key.trim() || !configured) : !showStored && !!key.trim() && (!extra || !!extra.value.trim())
   // A pasted key only counts once it is saved; Enter saves it too.
   const unsaved = !isCustom && !showStored && !!key.trim() && busy !== 'save'
   const onEnter = (e: React.KeyboardEvent<HTMLInputElement>): void => {
@@ -186,6 +189,7 @@ function KeyForm({
   const save = async (): Promise<void> => {
     setBusy('save')
     try {
+      await extra?.beforeSave()
       const r = isCustom ? await window.api.settings.setCustom(url, key) : await window.api.settings.setKey(provider, key)
       toast(r.ok ? 'success' : 'error', `${name}: ${r.message}`)
       setKey('')
@@ -242,6 +246,18 @@ function KeyForm({
               onChange={(e) => setUrl(e.target.value)}
               onKeyDown={onEnter}
               placeholder="http://localhost:11434/v1"
+              spellCheck={false}
+              className={cx(inputCls, 'h-11 font-mono text-sm')}
+            />
+          </Field>
+        )}
+        {extra && (
+          <Field label={extra.label} className="flex-1">
+            <input
+              value={extra.value}
+              onChange={(e) => extra.onChange(e.target.value)}
+              onKeyDown={onEnter}
+              placeholder={extra.placeholder}
               spellCheck={false}
               className={cx(inputCls, 'h-11 font-mono text-sm')}
             />
@@ -742,9 +758,15 @@ function CliImageCard({ settings, status, onChanged, onSettings }: { settings: A
 function VisualSection({ settings, statusOf, onChanged, onSettings }: { settings: AppSettings; statusOf: (p: ApiProvider) => KeyStatus | undefined; onChanged: () => void; onSettings: (s: AppSettings) => void }) {
   const statusHf = statusOf('higgsfield')
   const statusFal = statusOf('fal')
+  const statusCf = statusOf('cloudflare')
+  const [cfAccountId, setCfAccountId] = useState(settings.cloudflareAccountId)
   return (
     <>
-      <SectionTitle icon={<ImageIcon className="size-5" />} title="Gambar dan video" sub="Penyedia untuk membuat gambar klip, lembar karakter, dan video AI." />
+      <SectionTitle
+        icon={<ImageIcon className="size-5" />}
+        title="Gambar dan video"
+        sub="Penyedia untuk membuat gambar klip, lembar karakter, dan video AI. Pakai yang mana saja: tidak ada yang wajib, termasuk Higgsfield."
+      />
       <Card>
         <div className="flex items-center gap-3">
           <ProviderLogo id="higgsfield" />
@@ -774,8 +796,8 @@ function VisualSection({ settings, statusOf, onChanged, onSettings }: { settings
         <p className="flex items-start gap-2.5 border-t border-dashed border-line pt-4 text-[13px] leading-relaxed text-ink-2">
           <Film className="mt-0.5 size-4 shrink-0" />
           <span>
-            Semua {HF_IMAGE_MODELS.length} model gambar dan {HF_VIDEO_MODELS.length} model video Higgsfield bisa dipakai. Modelnya dipilih per proyek
-            di langkah <strong className="text-ink">Ide cerita</strong>, bagian Model AI.
+            Higgsfield itu opsional. Kalau kamu pakai, {HF_IMAGE_MODELS.length} model gambar dan {HF_VIDEO_MODELS.length} model videonya bisa dipakai. Modelnya
+            dipilih per proyek di langkah <strong className="text-ink">Ide cerita</strong>, bagian Model AI.
           </span>
         </p>
       </Card>
@@ -785,7 +807,7 @@ function VisualSection({ settings, statusOf, onChanged, onSettings }: { settings
           <ProviderLogo id="fal" />
           <div className="flex flex-1 flex-col">
             <span className="text-base font-bold">Fal.ai</span>
-            <span className="text-[13px] text-ink-2">FLUX.1 [schnell] dan [dev] · Sangat cepat dan hemat biaya (~$0.003/gambar)</span>
+            <span className="text-[13px] text-ink-2">FLUX.1 untuk gambar · Wan 2.2, LTX 2.3, Hailuo 02 dan Veo 3.1 Lite untuk video AI · satu kunci untuk semuanya</span>
           </div>
           <StatusBadge status={statusFal} />
         </div>
@@ -796,13 +818,60 @@ function VisualSection({ settings, statusOf, onChanged, onSettings }: { settings
           placeholder="Tempel API key Fal.ai"
           hint={
             <>
-              Buat kunci di dashboard Fal.ai pada bagian <strong className="text-ink">API Keys</strong>. Formatnya biasanya{' '}
-              <code className="rounded bg-sand px-1 font-mono text-xs">fal_key_...</code> atau kombinasi id:secret.
+              Buat kunci di dashboard Fal.ai pada bagian <strong className="text-ink">API Keys</strong>. Formatnya{' '}
+              <code className="rounded bg-sand px-1 font-mono text-xs">KEY_ID:KEY_SECRET</code>: salin kedua bagiannya sekaligus, digabung dengan titik dua.
+              Kunci yang kehilangan bagian setelah titik dua akan ditolak. Akunmu juga butuh saldo prabayar di{' '}
+              <button
+                type="button"
+                onClick={() => void window.api.app.openExternal('https://fal.ai/dashboard/billing')}
+                className="font-semibold text-accent-dark hover:underline"
+              >
+                halaman billing Fal.ai
+              </button>
+              .
             </>
           }
           help="Kunci dicek dengan endpoint Fal.ai tanpa memotong saldo."
           link="https://fal.ai/dashboard/keys"
           linkLabel="Buka dashboard Fal.ai"
+          onChanged={onChanged}
+        />
+      </Card>
+
+      <Card>
+        <div className="flex items-center gap-3">
+          <ProviderLogo id="cloudflare" />
+          <div className="flex flex-1 flex-col">
+            <span className="text-base font-bold">Cloudflare Workers AI</span>
+            <span className="text-[13px] text-ink-2">SDXL Lightning, FLUX.1 schnell, Lucid Origin · jatah gratis 10.000 neuron per hari</span>
+          </div>
+          <StatusBadge status={statusCf} />
+        </div>
+        <KeyForm
+          provider="cloudflare"
+          name="Cloudflare"
+          status={statusCf}
+          label="API token"
+          placeholder="Tempel API token Cloudflare"
+          extra={{
+            label: 'Account ID',
+            value: cfAccountId,
+            onChange: setCfAccountId,
+            placeholder: 'Contoh: 023e105f4ecef8ad9ca31a8372d0c353',
+            // The token is tested with the saved account id, so the id must be stored before the token.
+            beforeSave: async () => {
+              onSettings(await window.api.settings.set({ cloudflareAccountId: cfAccountId.trim() }))
+            }
+          }}
+          hint={
+            <>
+              Buat token di <strong className="text-ink">API Tokens</strong> dengan template <strong className="text-ink">Workers AI</strong> (izin Workers AI: Read
+              dan Edit). Account ID ada di beranda dashboard Cloudflare, menu <strong className="text-ink">Workers &amp; Pages &gt; Overview</strong>, kolom kanan.
+            </>
+          }
+          help="Token dicek dengan Account ID di atas, tanpa memakai jatah neuron."
+          link="https://dash.cloudflare.com/profile/api-tokens"
+          linkLabel="Buka API Tokens Cloudflare"
           onChanged={onChanged}
         />
       </Card>

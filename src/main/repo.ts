@@ -20,6 +20,7 @@ import type {
 import { sanitizeGraphic } from '@shared/graphics'
 import { visualSourceOf } from '@shared/script'
 import { getDb } from './db'
+import { modelsForNewProject } from './defaults'
 import { assetUrl, projectDir, projectsRoot } from './paths'
 import { getSettings } from './settings'
 
@@ -170,6 +171,7 @@ export function listProjects(): ProjectSummary[] {
 
 export function createProject(input: NewProjectInput): Project {
   const s = getSettings()
+  const models = modelsForNewProject()
   const now = Date.now()
   const id = randomUUID()
   const tts = input.ttsProvider ?? s.defaultTtsProvider
@@ -189,8 +191,8 @@ export function createProject(input: NewProjectInput): Project {
       input.styleId ?? 'stickman',
       tts,
       tts === 'gemini' ? 'Charon' : '',
-      s.imageModel,
-      s.videoModel,
+      models.imageModel,
+      models.videoModel,
       JSON.stringify(DEFAULT_EDITOR),
       now,
       now
